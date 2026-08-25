@@ -10,10 +10,13 @@ namespace Ecommerce_Backend.Data
         }
 
         public DbSet<Category> Categories { get; set; }
+        public DbSet<Product> Products { get; set; }
+        public DbSet<Variant> Variants { get; set; }
 
         public override int SaveChanges()
         {
             ValidateCategoryNameUniqueness();
+            ValidateSkuUniqueness();
             return base.SaveChanges();
         }
 
@@ -35,6 +38,26 @@ namespace Ecommerce_Backend.Data
                 {
                     throw new InvalidOperationException(
                         $"A category named '{category.Name}' already exists at this level.");
+                }
+            }
+        }
+
+        private void ValidateSkuUniqueness()
+        {
+            var newOrChangedVariants = ChangeTracker.Entries<Variant>()
+                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified)
+                .Select(e => e.Entity);
+
+            foreach (var variant in newOrChangedVariants)
+            {
+                bool duplicateExists = Variants.Local
+                    .Concat(Variants)
+                    .Any(v => v != variant && v.Sku == variant.Sku);
+
+                if (duplicateExists)
+                {
+                    throw new InvalidOperationException(
+                        $"A variant with SKU '{variant.Sku}' already exists.");
                 }
             }
         }
