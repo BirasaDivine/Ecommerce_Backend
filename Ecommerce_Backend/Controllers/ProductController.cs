@@ -3,6 +3,7 @@ using Ecommerce_Backend.DTOs;
 using Ecommerce_Backend.Models;
 using Ecommerce_Backend.Utils;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ecommerce_Backend.Controllers
@@ -17,6 +18,7 @@ namespace Ecommerce_Backend.Controllers
         {
             _context = context;
         }
+
         [HttpGet("{id}")]
         public IActionResult GetProductById(int id)
         {
@@ -52,7 +54,9 @@ namespace Ecommerce_Backend.Controllers
 
             return Ok(dto);
         }
+
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         public IActionResult CreateProduct([FromBody] Product product)
         {
             if (!ModelState.IsValid)
