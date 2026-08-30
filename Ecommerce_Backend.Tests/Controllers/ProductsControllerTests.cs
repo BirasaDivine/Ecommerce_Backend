@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
 namespace Ecommerce_Backend.Tests.Controllers
@@ -28,6 +29,15 @@ namespace Ecommerce_Backend.Tests.Controllers
             _client?.Dispose();
             _factory?.Dispose();
         }
+        private async Task<string> GetAdminTokenAsync()
+        {
+            var loginPayload = new { Email = "admin@ecommerce.local", Password = "Admin123!" };
+            var response = await _client.PostAsJsonAsync("/api/auth/login", loginPayload);
+            var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
+            return result!.Token;
+        }
+
+        private record LoginResponse(string Token);
 
         [Test]
         public async Task GetProductById_WithNonExistingId_Returns404()
@@ -64,6 +74,9 @@ namespace Ecommerce_Backend.Tests.Controllers
             context.Categories.Add(category);
             context.SaveChanges();
 
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
             var payload = new { Name = "Jeans", BasePrice = 50, CategoryId = category.Id };
             var response = await _client.PostAsJsonAsync("/api/products", payload);
 
@@ -73,10 +86,14 @@ namespace Ecommerce_Backend.Tests.Controllers
         [Test]
         public async Task CreateProduct_WithNegativePrice_Returns400()
         {
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
             var payload = new { Name = "Bad Product", BasePrice = -10, CategoryId = 1 };
             var response = await _client.PostAsJsonAsync("/api/products", payload);
 
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
         }
+
     }
 }
