@@ -1,0 +1,58 @@
+using Ecommerce_Backend.Data;
+using Ecommerce_Backend.DTOs;
+using Ecommerce_Backend.Models;
+using Ecommerce_Backend.Utils;
+using Microsoft.EntityFrameworkCore;
+
+namespace Ecommerce_Backend.Services
+{
+    public class ProductService : IProductService
+    {
+        private readonly AppDbContext _context;
+
+        public ProductService(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        public async Task<ProductDetailDto?> GetProductByIdAsync(int id)
+        {
+            var product = await _context.Products
+                .Include(p => p.Category)
+                .Include(p => p.Variants)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (product == null)
+            {
+                return null;
+            }
+
+            return new ProductDetailDto
+            {
+                Id = product.Id,
+                Name = product.Name,
+                Description = product.Description,
+                BasePrice = product.BasePrice,
+                Material = product.Material,
+                CategoryName = product.Category?.Name ?? string.Empty,
+                Variants = product.Variants
+                    .Where(v => v.Active)
+                    .Select(v => new VariantDto
+                    {
+                        Id = v.Id,
+                        Name = v.Name,
+                        Price = v.Price ?? product.BasePrice,
+                        StockStatus = StockStatusHelper.GetStockStatus(v.Quantity)
+                    })
+                    .ToList()
+            };
+        }
+
+        public async Task<Product> CreateProductAsync(Product product)
+        {
+            _context.Products.Add(product);
+            await _context.SaveChangesAsync();
+            return product;
+        }
+    }
+}

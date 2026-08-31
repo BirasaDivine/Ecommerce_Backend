@@ -1,9 +1,6 @@
-﻿using Ecommerce_Backend.Data;
-using Ecommerce_Backend.DTOs;
 using Ecommerce_Backend.Models;
-using Ecommerce_Backend.Utils;
+using Ecommerce_Backend.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace Ecommerce_Backend.Controllers
 {
@@ -11,49 +8,28 @@ namespace Ecommerce_Backend.Controllers
     [Route("api/[controller]")]
     public class ProductsController : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly IProductService _productService;
 
-        public ProductsController(AppDbContext context)
+        public ProductsController(IProductService productService)
         {
-            _context = context;
+            _productService = productService;
         }
-        [HttpGet("{id}")]
-        public IActionResult GetProductById(int id)
-        {
-            var product = _context.Products
-                .Include(p => p.Category)
-                .Include(p => p.Variants)
-                .FirstOrDefault(p => p.Id == id);
 
-            if (product == null)
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetProductById(int id)
+        {
+            var dto = await _productService.GetProductByIdAsync(id);
+
+            if (dto == null)
             {
                 return NotFound();
             }
 
-            var dto = new ProductDetailDto
-            {
-                Id = product.Id,
-                Name = product.Name,
-                Description = product.Description,
-                BasePrice = product.BasePrice,
-                Material = product.Material,
-                CategoryName = product.Category?.Name ?? string.Empty,
-                Variants = product.Variants
-                    .Where(v => v.Active)
-                    .Select(v => new VariantDto
-                    {
-                        Id = v.Id,
-                        Name = v.Name,
-                        Price = v.Price ?? product.BasePrice,
-                        StockStatus = StockStatusHelper.GetStockStatus(v.Quantity)
-                    })
-                    .ToList()
-            };
-
             return Ok(dto);
         }
+
         [HttpPost]
-        public IActionResult CreateProduct([FromBody] Product product)
+        public async Task<IActionResult> CreateProduct([FromBody] Product product)
         {
             if (!ModelState.IsValid)
             {
@@ -62,8 +38,7 @@ namespace Ecommerce_Backend.Controllers
 
             try
             {
-                _context.Products.Add(product);
-                _context.SaveChanges();
+                await _productService.CreateProductAsync(product);
             }
             catch (InvalidOperationException ex)
             {

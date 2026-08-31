@@ -20,6 +20,13 @@ namespace Ecommerce_Backend.Data
             return base.SaveChanges();
         }
 
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            ValidateCategoryNameUniqueness();
+            ValidateSkuUniqueness();
+            return base.SaveChangesAsync(cancellationToken);
+        }
+
         private void ValidateCategoryNameUniqueness()
         {
             var newOrChangedCategories = ChangeTracker.Entries<Category>()
