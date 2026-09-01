@@ -22,5 +22,7 @@ namespace Ecommerce_Backend.Models
             public Category? Category { get; set; }
 
             public List<Variant> Variants { get; set; } = [];
+
+            public List<Collection> Collections { get; set; } = [];
         }
  }
