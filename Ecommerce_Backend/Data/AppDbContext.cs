@@ -14,6 +14,7 @@ namespace Ecommerce_Backend.Data
         public DbSet<Product> Products { get; set; }
         public DbSet<Variant> Variants { get; set; }
         public DbSet<Collection> Collections { get; set; }
+        public DbSet<Order> Orders { get; set; }
 
         public override int SaveChanges()
         {
