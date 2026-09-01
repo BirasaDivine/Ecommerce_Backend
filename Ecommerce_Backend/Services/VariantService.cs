@@ -53,6 +53,19 @@ namespace Ecommerce_Backend.Services
             return variant;
         }
 
+        public async Task<Variant?> UpdateStockAsync(string sku, int quantity)
+        {
+            var variant = await _context.Variants.FirstOrDefaultAsync(v => v.Sku == sku);
+            if (variant == null)
+            {
+                return null;
+            }
+
+            variant.Quantity = quantity;
+            await _context.SaveChangesAsync();
+            return variant;
+        }
+
         private static VariantDetailDto ToDto(Variant variant)
         {
             return new VariantDetailDto

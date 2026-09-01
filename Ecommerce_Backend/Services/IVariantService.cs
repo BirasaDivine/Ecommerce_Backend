@@ -8,5 +8,6 @@ namespace Ecommerce_Backend.Services
         Task<VariantDetailDto?> GetVariantByIdAsync(int id);
         Task<List<VariantDetailDto>> GetAllVariantsAsync(int? productId = null);
         Task<Variant> CreateVariantAsync(Variant variant);
+        Task<Variant?> UpdateStockAsync(string sku, int quantity);
     }
 }

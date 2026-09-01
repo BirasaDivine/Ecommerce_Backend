@@ -1,9 +1,17 @@
 using Ecommerce_Backend.Models;
 using Ecommerce_Backend.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 
 namespace Ecommerce_Backend.Controllers
 {
+    public class UpdateStockRequest
+    {
+        [Range(0, int.MaxValue, ErrorMessage = "Quantity cannot be negative.")]
+        public int Quantity { get; set; }
+    }
+
     [ApiController]
     [Route("api/[controller]")]
     public class VariantsController : ControllerBase
@@ -53,6 +61,25 @@ namespace Ecommerce_Backend.Controllers
             }
 
             return CreatedAtAction(nameof(GetVariantById), new { id = variant.Id }, variant);
+        }
+
+        [HttpPatch("{sku}/stock")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> UpdateStock(string sku, [FromBody] UpdateStockRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var variant = await _variantService.UpdateStockAsync(sku, request.Quantity);
+
+            if (variant == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(new { variant.Sku, variant.Quantity });
         }
     }
 }
