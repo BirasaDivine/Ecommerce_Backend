@@ -64,6 +64,16 @@ namespace Ecommerce_Backend.Controllers
                 return BadRequest(ModelState);
             }
 
+            if (!_context.Categories.Any(c => c.Id == product.CategoryId))
+            {
+                return BadRequest("Category not found.");
+            }
+
+            if (_context.Categories.Any(c => c.ParentCategoryId == product.CategoryId))
+            {
+                return BadRequest("Products must be assigned to a terminal (leaf) category, not a category that has subcategories.");
+            }
+
             try
             {
                 _context.Products.Add(product);
