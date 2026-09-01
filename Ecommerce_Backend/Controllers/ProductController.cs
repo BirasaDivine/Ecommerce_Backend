@@ -16,6 +16,13 @@ namespace Ecommerce_Backend.Controllers
             _productService = productService;
         }
 
+        [HttpGet]
+        public async Task<IActionResult> GetAllProducts([FromQuery] string? name, [FromQuery] decimal? maxPrice)
+        {
+            var products = await _productService.GetAllProductsAsync(name, maxPrice);
+            return Ok(products);
+        }
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetProductById(int id)
         {

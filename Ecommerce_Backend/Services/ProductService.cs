@@ -15,6 +15,28 @@ namespace Ecommerce_Backend.Services
             _context = context;
         }
 
+        public async Task<List<ProductDetailDto>> GetAllProductsAsync(string? name, decimal? maxPrice)
+        {
+            var query = _context.Products
+                .Include(p => p.Category)
+                .Include(p => p.Variants)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                var search = name.ToLower();
+                query = query.Where(p => p.Name.ToLower().Contains(search));
+            }
+
+            if (maxPrice.HasValue)
+            {
+                query = query.Where(p => p.BasePrice <= maxPrice.Value);
+            }
+
+            var products = await query.ToListAsync();
+            return products.Select(ToDto).ToList();
+        }
+
         public async Task<ProductDetailDto?> GetProductByIdAsync(int id)
         {
             var product = await _context.Products
@@ -27,6 +49,11 @@ namespace Ecommerce_Backend.Services
                 return null;
             }
 
+            return ToDto(product);
+        }
+
+        private static ProductDetailDto ToDto(Product product)
+        {
             return new ProductDetailDto
             {
                 Id = product.Id,

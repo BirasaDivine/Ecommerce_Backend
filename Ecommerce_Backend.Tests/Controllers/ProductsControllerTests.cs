@@ -261,6 +261,95 @@ namespace Ecommerce_Backend.Tests.Controllers
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
         }
 
+        private record ProductListItem(int Id, string Name, decimal BasePrice);
+
+        private void SeedProducts(AppDbContext context, Category category)
+        {
+            context.Products.AddRange(
+                new Product { Name = "Cotton Top", BasePrice = 100, CategoryId = category.Id },
+                new Product { Name = "Denim Jacket", BasePrice = 150, CategoryId = category.Id },
+                new Product { Name = "Cotton Scarf", BasePrice = 20, CategoryId = category.Id }
+            );
+            context.SaveChanges();
+        }
+
+        [Test]
+        public async Task GetAllProducts_WithNoFilters_ReturnsAllProducts()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var category = new Category { Name = "Apparel" };
+            context.Categories.Add(category);
+            context.SaveChanges();
+            SeedProducts(context, category);
+
+            var response = await _client.GetAsync("/api/products");
+            var products = await response.Content.ReadFromJsonAsync<List<ProductListItem>>();
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(products, Has.Count.EqualTo(3));
+        }
+
+        [Test]
+        public async Task GetAllProducts_FilteredByName_ReturnsMatchingProducts()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var category = new Category { Name = "Apparel" };
+            context.Categories.Add(category);
+            context.SaveChanges();
+            SeedProducts(context, category);
+
+            var response = await _client.GetAsync("/api/products?name=cotton");
+            var products = await response.Content.ReadFromJsonAsync<List<ProductListItem>>();
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(products, Has.Count.EqualTo(2));
+            Assert.That(products!.Select(p => p.Name), Is.EquivalentTo(new[] { "Cotton Top", "Cotton Scarf" }));
+        }
+
+        [Test]
+        public async Task GetAllProducts_FilteredByMaxPrice_ReturnsMatchingProducts()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var category = new Category { Name = "Apparel" };
+            context.Categories.Add(category);
+            context.SaveChanges();
+            SeedProducts(context, category);
+
+            var response = await _client.GetAsync("/api/products?maxPrice=100");
+            var products = await response.Content.ReadFromJsonAsync<List<ProductListItem>>();
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(products, Has.Count.EqualTo(2));
+            Assert.That(products!.Select(p => p.Name), Is.EquivalentTo(new[] { "Cotton Top", "Cotton Scarf" }));
+        }
+
+        [Test]
+        public async Task GetAllProducts_ReturnsEagerLoadedCategoryAndVariants()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var category = new Category { Name = "Apparel" };
+            context.Categories.Add(category);
+            context.SaveChanges();
+
+            var product = new Product { Name = "Cotton Top", BasePrice = 100, CategoryId = category.Id };
+            context.Products.Add(product);
+            context.SaveChanges();
+
+            context.Variants.Add(new Variant { Name = "Small", Sku = "CT-S", Quantity = 5, ProductId = product.Id });
+            context.SaveChanges();
+
+            var response = await _client.GetAsync("/api/products");
+            var body = await response.Content.ReadAsStringAsync();
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(body, Does.Contain("Apparel"));
+            Assert.That(body, Does.Contain("Small"));
+        }
+
         private class ProductResponse
         {
             public int Id { get; set; }
