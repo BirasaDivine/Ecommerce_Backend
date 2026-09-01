@@ -56,6 +56,39 @@ namespace Ecommerce_Backend.Tests.Controllers
         }
 
         [Test]
+        public async Task GetProductById_ReturnsCategoryNameAndActiveVariantsOnly()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var category = new Category { Name = "Topwear" };
+            context.Categories.Add(category);
+            context.SaveChanges();
+
+            var product = new Product
+            {
+                Name = "Cotton Top",
+                BasePrice = 100,
+                CategoryId = category.Id,
+                Variants = new List<Variant>
+                {
+                    new Variant { Name = "Small", Sku = "TOP-S", Quantity = 10, Active = true },
+                    new Variant { Name = "Discontinued", Sku = "TOP-D", Quantity = 0, Active = false },
+                }
+            };
+            context.Products.Add(product);
+            context.SaveChanges();
+
+            var response = await _client.GetAsync($"/api/products/{product.Id}");
+            var dto = await response.Content.ReadFromJsonAsync<ProductResponse>();
+
+            Assert.That(dto, Is.Not.Null);
+            Assert.That(dto!.CategoryName, Is.EqualTo("Topwear"));
+            Assert.That(dto.Variants, Has.Count.EqualTo(1));
+            Assert.That(dto.Variants[0].Name, Is.EqualTo("Small"));
+        }
+
+        [Test]
         public async Task CreateProduct_WithValidData_Returns201()
         {
             using var scope = _factory.Services.CreateScope();
@@ -77,6 +110,84 @@ namespace Ecommerce_Backend.Tests.Controllers
             var response = await _client.PostAsJsonAsync("/api/products", payload);
 
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        }
+
+        [Test]
+        public async Task CreateProduct_WithMissingName_Returns400()
+        {
+            var payload = new { BasePrice = 50, CategoryId = 1 };
+            var response = await _client.PostAsJsonAsync("/api/products", payload);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        }
+
+        [Test]
+        public async Task CreateProduct_WithVariants_PersistsVariants()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var category = new Category { Name = "Bottomwear" };
+            context.Categories.Add(category);
+            context.SaveChanges();
+
+            var payload = new
+            {
+                Name = "Jeans",
+                BasePrice = 50,
+                CategoryId = category.Id,
+                Variants = new[]
+                {
+                    new { Name = "32", Sku = "JEANS-32", Quantity = 10 },
+                    new { Name = "34", Sku = "JEANS-34", Quantity = 5 },
+                }
+            };
+            var response = await _client.PostAsJsonAsync("/api/products", payload);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+            Assert.That(context.Variants.Count(v => v.Sku == "JEANS-32" || v.Sku == "JEANS-34"), Is.EqualTo(2));
+        }
+
+        [Test]
+        public async Task CreateProduct_WithDuplicateVariantSku_Returns400()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var category = new Category { Name = "Bottomwear" };
+            context.Categories.Add(category);
+            context.SaveChanges();
+
+            var existingProduct = new Product
+            {
+                Name = "Existing Jeans",
+                BasePrice = 40,
+                CategoryId = category.Id,
+                Variants = new List<Variant> { new Variant { Name = "32", Sku = "JEANS-32", Quantity = 3 } }
+            };
+            context.Products.Add(existingProduct);
+            context.SaveChanges();
+
+            var payload = new
+            {
+                Name = "New Jeans",
+                BasePrice = 50,
+                CategoryId = category.Id,
+                Variants = new[] { new { Name = "32", Sku = "JEANS-32", Quantity = 10 } }
+            };
+            var response = await _client.PostAsJsonAsync("/api/products", payload);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        }
+
+        private class ProductResponse
+        {
+            public int Id { get; set; }
+            public string CategoryName { get; set; } = string.Empty;
+            public List<VariantResponse> Variants { get; set; } = new();
+        }
+
+        private class VariantResponse
+        {
+            public string Name { get; set; } = string.Empty;
         }
     }
 }
