@@ -36,16 +36,18 @@ namespace Ecommerce_Backend.Controllers
                 return BadRequest(ModelState);
             }
 
+            Product created;
             try
             {
-                await _productService.CreateProductAsync(product);
+                created = await _productService.CreateProductAsync(product);
             }
             catch (InvalidOperationException ex)
             {
                 return BadRequest(ex.Message);
             }
 
-            return CreatedAtAction(nameof(GetProductById), new { id = product.Id }, product);
+            var dto = await _productService.GetProductByIdAsync(created.Id);
+            return CreatedAtAction(nameof(GetProductById), new { id = created.Id }, dto);
         }
     }
 }
