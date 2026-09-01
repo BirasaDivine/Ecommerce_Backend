@@ -19,6 +19,30 @@ namespace Ecommerce_Backend.Controllers
             _context = context;
         }
 
+        [HttpGet]
+        public IActionResult GetAllProducts([FromQuery] string? name, [FromQuery] decimal? maxPrice)
+        {
+            var query = _context.Products
+                .Include(p => p.Category)
+                .Include(p => p.Variants)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                var search = name.ToLower();
+                query = query.Where(p => p.Name.ToLower().Contains(search));
+            }
+
+            if (maxPrice.HasValue)
+            {
+                query = query.Where(p => p.BasePrice <= maxPrice.Value);
+            }
+
+            var dtos = query.ToList().Select(ToDto).ToList();
+
+            return Ok(dtos);
+        }
+
         [HttpGet("{id}")]
         public IActionResult GetProductById(int id)
         {
@@ -32,7 +56,12 @@ namespace Ecommerce_Backend.Controllers
                 return NotFound();
             }
 
-            var dto = new ProductDetailDto
+            return Ok(ToDto(product));
+        }
+
+        private static ProductDetailDto ToDto(Product product)
+        {
+            return new ProductDetailDto
             {
                 Id = product.Id,
                 Name = product.Name,
@@ -51,8 +80,6 @@ namespace Ecommerce_Backend.Controllers
                     })
                     .ToList()
             };
-
-            return Ok(dto);
         }
 
         [HttpPost]
