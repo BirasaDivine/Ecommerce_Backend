@@ -50,6 +50,17 @@ namespace Ecommerce_Backend.Services
 
         public async Task<Product> CreateProductAsync(Product product)
         {
+            if (!await _context.Categories.AnyAsync(c => c.Id == product.CategoryId))
+            {
+                throw new InvalidOperationException("Category not found.");
+            }
+
+            if (await _context.Categories.AnyAsync(c => c.ParentCategoryId == product.CategoryId))
+            {
+                throw new InvalidOperationException(
+                    "Products must be assigned to a terminal (leaf) category, not a category that has subcategories.");
+            }
+
             _context.Products.Add(product);
             await _context.SaveChangesAsync();
             return product;

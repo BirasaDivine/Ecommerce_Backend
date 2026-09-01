@@ -141,6 +141,64 @@ namespace Ecommerce_Backend.Tests.Controllers
         }
 
         [Test]
+        public async Task CreateProduct_WithNonExistentCategory_Returns400()
+        {
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var payload = new { Name = "Orphan Product", BasePrice = 20, CategoryId = 9999 };
+            var response = await _client.PostAsJsonAsync("/api/products", payload);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        }
+
+        [Test]
+        public async Task CreateProduct_WithNonTerminalCategory_Returns400()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var parent = new Category { Name = "Women" };
+            context.Categories.Add(parent);
+            context.SaveChanges();
+
+            var child = new Category { Name = "Dresses", ParentCategoryId = parent.Id };
+            context.Categories.Add(child);
+            context.SaveChanges();
+
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var payload = new { Name = "Trench Coat", BasePrice = 90, CategoryId = parent.Id };
+            var response = await _client.PostAsJsonAsync("/api/products", payload);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        }
+
+        [Test]
+        public async Task CreateProduct_WithTerminalCategory_Returns201()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var parent = new Category { Name = "Women" };
+            context.Categories.Add(parent);
+            context.SaveChanges();
+
+            var child = new Category { Name = "Dresses", ParentCategoryId = parent.Id };
+            context.Categories.Add(child);
+            context.SaveChanges();
+
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var payload = new { Name = "Summer Dress", BasePrice = 45, CategoryId = child.Id };
+            var response = await _client.PostAsJsonAsync("/api/products", payload);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        }
+
+        [Test]
         public async Task CreateProduct_WithVariants_PersistsVariants()
         {
             using var scope = _factory.Services.CreateScope();

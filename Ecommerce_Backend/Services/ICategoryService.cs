@@ -8,5 +8,7 @@ namespace Ecommerce_Backend.Services
         Task<CategoryDto?> GetCategoryByIdAsync(int id);
         Task<List<CategoryDto>> GetAllCategoriesAsync();
         Task<Category> CreateCategoryAsync(Category category);
+        Task<Category?> UpdateCategoryAsync(int id, Category updated);
+        Task<bool> DeleteCategoryAsync(int id);
     }
 }

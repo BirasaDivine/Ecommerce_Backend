@@ -1,5 +1,6 @@
 using Ecommerce_Backend.Models;
 using Ecommerce_Backend.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Ecommerce_Backend.Controllers
@@ -36,6 +37,7 @@ namespace Ecommerce_Backend.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateCategory([FromBody] Category category)
         {
             if (!ModelState.IsValid)
@@ -53,6 +55,53 @@ namespace Ecommerce_Backend.Controllers
             }
 
             return CreatedAtAction(nameof(GetCategoryById), new { id = category.Id }, category);
+        }
+
+        [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> UpdateCategory(int id, [FromBody] Category updated)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var category = await _categoryService.UpdateCategoryAsync(id, updated);
+
+                if (category == null)
+                {
+                    return NotFound();
+                }
+
+                return Ok(category);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> DeleteCategory(int id)
+        {
+            try
+            {
+                var deleted = await _categoryService.DeleteCategoryAsync(id);
+
+                if (!deleted)
+                {
+                    return NotFound();
+                }
+
+                return NoContent();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
     }
 }
