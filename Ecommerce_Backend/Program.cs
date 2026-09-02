@@ -48,8 +48,12 @@ builder.Services.AddAuthentication(options =>
 });
 
 var app = builder.Build();
-using (var scope = app.Services.CreateScope())
+
+// Seed roles and a default admin only in Development; a real environment must
+// provision users/roles through a controlled process, not a hard-coded account.
+if (app.Environment.IsDevelopment())
 {
+    using var scope = app.Services.CreateScope();
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
 
@@ -62,13 +66,14 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    var adminEmail = "admin@ecommerce.local";
+    var adminEmail = builder.Configuration["SeedAdmin:Email"] ?? "admin@ecommerce.local";
+    var adminPassword = builder.Configuration["SeedAdmin:Password"] ?? "Admin123!";
     var existingAdmin = await userManager.FindByEmailAsync(adminEmail);
 
     if (existingAdmin == null)
     {
         var admin = new ApplicationUser { UserName = adminEmail, Email = adminEmail };
-        await userManager.CreateAsync(admin, "Admin123!");
+        await userManager.CreateAsync(admin, adminPassword);
         await userManager.AddToRoleAsync(admin, "Admin");
     }
 }
