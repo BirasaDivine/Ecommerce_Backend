@@ -24,8 +24,7 @@ namespace Ecommerce_Backend.Services
 
             if (!string.IsNullOrWhiteSpace(name))
             {
-                var search = name.ToLower();
-                query = query.Where(p => p.Name.ToLower().Contains(search));
+                query = query.Where(p => EF.Functions.Like(p.Name, $"%{name}%"));
             }
 
             if (maxPrice.HasValue)
