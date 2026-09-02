@@ -31,30 +31,11 @@ namespace Ecommerce_Backend.Controllers
         }
 
         [HttpPost]
-        public IActionResult Buy([FromBody] BuyRequest request)
+        public async Task<IActionResult> Buy([FromBody] BuyRequest request)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
-            }
-
-            var variant = _context.Variants
-                .Include(v => v.Product)
-                .FirstOrDefault(v => v.Id == request.VariantId);
-
-            if (variant == null)
-            {
-                return NotFound("Variant not found.");
-            }
-
-            if (!variant.Active)
-            {
-                return BadRequest("This variant is not available for purchase.");
-            }
-
-            if (variant.Quantity < request.Quantity)
-            {
-                return BadRequest("Insufficient stock for the requested quantity.");
             }
 
             var userId = GetCurrentUserId();
@@ -63,23 +44,55 @@ namespace Ecommerce_Backend.Controllers
                 return Unauthorized();
             }
 
-            var unitPrice = variant.Price ?? variant.Product!.BasePrice;
-
-            var order = new Order
+            // Quantity is an optimistic-concurrency token (see AppDbContext), so if
+            // another purchase decrements it between our read and our write, SaveChanges
+            // throws instead of silently overselling; we reload and retry in that case.
+            while (true)
             {
-                ApplicationUserId = userId,
-                VariantId = variant.Id,
-                Quantity = request.Quantity,
-                UnitPrice = unitPrice,
-                OrderDate = DateTime.UtcNow
-            };
+                var variant = await _context.Variants
+                    .Include(v => v.Product)
+                    .FirstOrDefaultAsync(v => v.Id == request.VariantId);
 
-            variant.Quantity -= request.Quantity;
+                if (variant == null)
+                {
+                    return NotFound("Variant not found.");
+                }
 
-            _context.Orders.Add(order);
-            _context.SaveChanges();
+                if (!variant.Active)
+                {
+                    return BadRequest("This variant is not available for purchase.");
+                }
 
-            return CreatedAtAction(nameof(GetOrderById), new { id = order.Id }, ToDto(order, variant.Sku));
+                if (variant.Quantity < request.Quantity)
+                {
+                    return BadRequest("Insufficient stock for the requested quantity.");
+                }
+
+                var unitPrice = variant.Price ?? variant.Product!.BasePrice;
+                variant.Quantity -= request.Quantity;
+
+                var order = new Order
+                {
+                    ApplicationUserId = userId,
+                    VariantId = variant.Id,
+                    Quantity = request.Quantity,
+                    UnitPrice = unitPrice,
+                    OrderDate = DateTime.UtcNow
+                };
+
+                _context.Orders.Add(order);
+
+                try
+                {
+                    await _context.SaveChangesAsync();
+                    return CreatedAtAction(nameof(GetOrderById), new { id = order.Id }, ToDto(order, variant.Sku));
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    _context.Entry(order).State = EntityState.Detached;
+                    _context.Entry(variant).State = EntityState.Detached;
+                }
+            }
         }
 
         [HttpGet("{id}")]

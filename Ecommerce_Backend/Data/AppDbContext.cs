@@ -16,6 +16,18 @@ namespace Ecommerce_Backend.Data
         public DbSet<Collection> Collections { get; set; }
         public DbSet<Order> Orders { get; set; }
 
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            // Quantity doubles as an optimistic-concurrency token so a stock
+            // decrement fails loudly (DbUpdateConcurrencyException) instead of
+            // silently overselling when two purchases race each other.
+            modelBuilder.Entity<Variant>()
+                .Property(v => v.Quantity)
+                .IsConcurrencyToken();
+        }
+
         public override int SaveChanges()
         {
             ValidateCategoryNameUniqueness();
