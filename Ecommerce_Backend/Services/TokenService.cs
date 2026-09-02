@@ -29,10 +29,20 @@ namespace Ecommerce_Backend.Services
                 claims.Add(new Claim(ClaimTypes.Role, role));
             }
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
+            var jwtKey = _configuration["Jwt:Key"];
+            if (string.IsNullOrWhiteSpace(jwtKey))
+            {
+                throw new InvalidOperationException(
+                    "JWT signing key is not configured. Set 'Jwt:Key' in configuration (e.g. user secrets or an environment variable) before issuing tokens.");
+            }
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-            var expiryMinutes = double.Parse(_configuration["Jwt:ExpiryMinutes"]!);
+            if (!double.TryParse(_configuration["Jwt:ExpiryMinutes"], out var expiryMinutes))
+            {
+                expiryMinutes = 60;
+            }
 
             var token = new JwtSecurityToken(
                 issuer: _configuration["Jwt:Issuer"],
