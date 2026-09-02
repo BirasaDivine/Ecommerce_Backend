@@ -38,9 +38,13 @@ namespace Ecommerce_Backend.Data
 
             foreach (var category in newOrChangedCategories)
             {
-                bool duplicateExists = Categories.Local
-                    .Concat(Categories)
+                bool duplicateInLocal = Categories.Local
                     .Any(c => c != category
+                        && c.Name == category.Name
+                        && c.ParentCategoryId == category.ParentCategoryId);
+
+                bool duplicateExists = duplicateInLocal || Categories
+                    .Any(c => c.Id != category.Id
                         && c.Name == category.Name
                         && c.ParentCategoryId == category.ParentCategoryId);
 
@@ -60,9 +64,11 @@ namespace Ecommerce_Backend.Data
 
             foreach (var variant in newOrChangedVariants)
             {
-                bool duplicateExists = Variants.Local
-                    .Concat(Variants)
+                bool duplicateInLocal = Variants.Local
                     .Any(v => v != variant && v.Sku == variant.Sku);
+
+                bool duplicateExists = duplicateInLocal || Variants
+                    .Any(v => v.Id != variant.Id && v.Sku == variant.Sku);
 
                 if (duplicateExists)
                 {
