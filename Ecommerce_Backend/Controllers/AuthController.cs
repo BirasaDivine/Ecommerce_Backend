@@ -2,18 +2,28 @@
 using Microsoft.AspNetCore.Mvc;
 using Ecommerce_Backend.Models;
 using Ecommerce_Backend.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace Ecommerce_Backend.Controllers
 {
     public class RegisterRequest
     {
+        [Required]
+        [EmailAddress]
         public string Email { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(6)]
         public string Password { get; set; } = string.Empty;
     }
 
     public class LoginRequest
     {
+        [Required]
+        [EmailAddress]
         public string Email { get; set; } = string.Empty;
+
+        [Required]
         public string Password { get; set; } = string.Empty;
     }
 
