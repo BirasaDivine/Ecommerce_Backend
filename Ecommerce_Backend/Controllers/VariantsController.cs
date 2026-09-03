@@ -14,6 +14,7 @@ namespace Ecommerce_Backend.Controllers
 
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Roles = "Admin")]
     public class VariantsController : ControllerBase
     {
         private readonly IVariantService _variantService;
@@ -64,7 +65,6 @@ namespace Ecommerce_Backend.Controllers
         }
 
         [HttpPatch("{sku}/stock")]
-        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateStock(string sku, [FromBody] UpdateStockRequest request)
         {
             if (!ModelState.IsValid)
