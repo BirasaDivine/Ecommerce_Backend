@@ -81,7 +81,26 @@ namespace Ecommerce_Backend.Tests.Controllers
         }
 
         [Test]
-        public async Task GetAllVariants_ReturnsAllSeededVariants()
+        public async Task GetAllVariants_WithoutAuth_Returns401()
+        {
+            var response = await _client.GetAsync("/api/variants");
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        }
+
+        [Test]
+        public async Task GetAllVariants_AsNonAdmin_Returns403()
+        {
+            var token = await GetUserTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var response = await _client.GetAsync("/api/variants");
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+        }
+
+        [Test]
+        public async Task GetAllVariants_AsAdmin_ReturnsAllSeededVariants()
         {
             var (_, product) = SeedProduct();
 
@@ -93,6 +112,9 @@ namespace Ecommerce_Backend.Tests.Controllers
                     new Variant { Name = "Medium", Sku = "TOP-M", Quantity = 5, ProductId = product.Id });
                 context.SaveChanges();
             }
+
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var response = await _client.GetAsync("/api/variants");
             var variants = await response.Content.ReadFromJsonAsync<List<VariantResponse>>();
@@ -116,6 +138,9 @@ namespace Ecommerce_Backend.Tests.Controllers
                 context.SaveChanges();
             }
 
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
             var response = await _client.GetAsync($"/api/variants?productId={productA.Id}");
             var variants = await response.Content.ReadFromJsonAsync<List<VariantResponse>>();
 
@@ -125,15 +150,26 @@ namespace Ecommerce_Backend.Tests.Controllers
         }
 
         [Test]
-        public async Task GetVariantById_WithNonExistingId_Returns404()
+        public async Task GetVariantById_WithoutAuth_Returns401()
         {
+            var response = await _client.GetAsync("/api/variants/9999");
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        }
+
+        [Test]
+        public async Task GetVariantById_AsAdmin_WithNonExistingId_Returns404()
+        {
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
             var response = await _client.GetAsync("/api/variants/9999");
 
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         }
 
         [Test]
-        public async Task GetVariantById_WithExistingId_Returns200()
+        public async Task GetVariantById_AsAdmin_WithExistingId_Returns200()
         {
             var (_, product) = SeedProduct();
 
@@ -146,15 +182,44 @@ namespace Ecommerce_Backend.Tests.Controllers
                 context.SaveChanges();
             }
 
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
             var response = await _client.GetAsync($"/api/variants/{variant.Id}");
 
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         }
 
         [Test]
-        public async Task CreateVariant_WithValidData_Returns201()
+        public async Task CreateVariant_WithoutAuth_Returns401()
         {
             var (_, product) = SeedProduct();
+
+            var payload = new { Name = "Small", Sku = "TOP-S", Quantity = 10, ProductId = product.Id };
+            var response = await _client.PostAsJsonAsync("/api/variants", payload);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        }
+
+        [Test]
+        public async Task CreateVariant_AsNonAdmin_Returns403()
+        {
+            var (_, product) = SeedProduct();
+            var token = await GetUserTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var payload = new { Name = "Small", Sku = "TOP-S", Quantity = 10, ProductId = product.Id };
+            var response = await _client.PostAsJsonAsync("/api/variants", payload);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+        }
+
+        [Test]
+        public async Task CreateVariant_AsAdmin_WithValidData_Returns201()
+        {
+            var (_, product) = SeedProduct();
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var payload = new { Name = "Small", Sku = "TOP-S", Quantity = 10, ProductId = product.Id };
             var response = await _client.PostAsJsonAsync("/api/variants", payload);
@@ -163,8 +228,11 @@ namespace Ecommerce_Backend.Tests.Controllers
         }
 
         [Test]
-        public async Task CreateVariant_WithNonExistingProduct_Returns400()
+        public async Task CreateVariant_AsAdmin_WithNonExistingProduct_Returns400()
         {
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
             var payload = new { Name = "Small", Sku = "TOP-S", Quantity = 10, ProductId = 9999 };
             var response = await _client.PostAsJsonAsync("/api/variants", payload);
 
@@ -172,9 +240,11 @@ namespace Ecommerce_Backend.Tests.Controllers
         }
 
         [Test]
-        public async Task CreateVariant_WithDuplicateSku_Returns400()
+        public async Task CreateVariant_AsAdmin_WithDuplicateSku_Returns400()
         {
             var (_, product) = SeedProduct();
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var first = new { Name = "Small", Sku = "TOP-S", Quantity = 10, ProductId = product.Id };
             await _client.PostAsJsonAsync("/api/variants", first);
@@ -186,9 +256,11 @@ namespace Ecommerce_Backend.Tests.Controllers
         }
 
         [Test]
-        public async Task CreateVariant_WithNegativeQuantity_Returns400()
+        public async Task CreateVariant_AsAdmin_WithNegativeQuantity_Returns400()
         {
             var (_, product) = SeedProduct();
+            var token = await GetAdminTokenAsync();
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var payload = new { Name = "Small", Sku = "TOP-S", Quantity = -1, ProductId = product.Id };
             var response = await _client.PostAsJsonAsync("/api/variants", payload);

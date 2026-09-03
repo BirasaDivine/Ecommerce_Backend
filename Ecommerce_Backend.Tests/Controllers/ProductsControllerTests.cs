@@ -66,6 +66,37 @@ namespace Ecommerce_Backend.Tests.Controllers
         }
 
         [Test]
+        public async Task GetProductById_PublicResponse_DoesNotLeakExactQuantity()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var category = new Category { Name = "Topwear" };
+            context.Categories.Add(category);
+            context.SaveChanges();
+
+            var product = new Product
+            {
+                Name = "Cotton Top",
+                BasePrice = 100,
+                CategoryId = category.Id,
+                Variants = new List<Variant>
+                {
+                    new Variant { Name = "Small", Sku = "TOP-S", Quantity = 3, Active = true },
+                }
+            };
+            context.Products.Add(product);
+            context.SaveChanges();
+
+            var response = await _client.GetAsync($"/api/products/{product.Id}");
+            var body = await response.Content.ReadAsStringAsync();
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(body, Does.Not.Contain("quantity").IgnoreCase);
+            Assert.That(body, Does.Contain("LOW_STOCK"));
+        }
+
+        [Test]
         public async Task GetProductById_ReturnsCategoryNameAndActiveVariantsOnly()
         {
             using var scope = _factory.Services.CreateScope();
