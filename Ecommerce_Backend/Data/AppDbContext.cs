@@ -26,6 +26,13 @@ namespace Ecommerce_Backend.Data
             modelBuilder.Entity<Variant>()
                 .Property(v => v.Quantity)
                 .IsConcurrencyToken();
+
+            // Backstop for ValidateSkuUniqueness below: that check runs before the
+            // insert, so it can't catch two concurrent requests racing past it at
+            // the same time. The DB constraint is what actually stops that.
+            modelBuilder.Entity<Variant>()
+                .HasIndex(v => v.Sku)
+                .IsUnique();
         }
 
         public override int SaveChanges()

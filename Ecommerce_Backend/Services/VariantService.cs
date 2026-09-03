@@ -49,7 +49,22 @@ namespace Ecommerce_Backend.Services
             }
 
             _context.Variants.Add(variant);
-            await _context.SaveChangesAsync();
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                var duplicateExists = await _context.Variants.AnyAsync(v => v.Id != variant.Id && v.Sku == variant.Sku);
+                if (duplicateExists)
+                {
+                    throw new InvalidOperationException($"A variant with SKU '{variant.Sku}' already exists.");
+                }
+
+                throw;
+            }
+
             return variant;
         }
 
