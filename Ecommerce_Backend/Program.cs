@@ -1,10 +1,13 @@
+using Azure.Messaging.ServiceBus;
 using Ecommerce_Backend.Configuration;
 using Ecommerce_Backend.Data;
+using Ecommerce_Backend.Messaging;
 using Ecommerce_Backend.Models;
 using Ecommerce_Backend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using System.Text;
@@ -16,6 +19,10 @@ builder.Services.AddOpenApi();
 builder.Services.AddScoped<TokenService>();
 
 builder.Services.Configure<ServiceBusOptions>(builder.Configuration.GetSection("ServiceBus"));
+builder.Services.AddSingleton(sp =>
+    new ServiceBusClient(sp.GetRequiredService<IOptions<ServiceBusOptions>>().Value.ConnectionString));
+builder.Services.AddSingleton<IOrderEventPublisher, ServiceBusOrderEventPublisher>();
+builder.Services.AddHostedService<OrderProcessingService>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -76,7 +83,7 @@ if (app.Environment.IsDevelopment())
     if (existingAdmin == null)
     {
         var admin = new ApplicationUser { UserName = adminEmail, Email = adminEmail };
-       await userManager.CreateAsync(admin, adminPassword);
+        await userManager.CreateAsync(admin, adminPassword);
         await userManager.AddToRoleAsync(admin, "Admin");
     }
 }
