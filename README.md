@@ -45,6 +45,28 @@ In Development only, a `SeedAdmin:Email` / `SeedAdmin:Password` pair (defaulting
 `admin@ecommerce.local` / `Admin123!`) is seeded on startup along with the `Admin` and `User` roles.
 This seeding does not run outside Development.
 
+`appsettings.json` also holds the non-secret `ServiceBus:QueueName`. `ServiceBus:ConnectionString`
+follows the same rule as `Jwt:Key` — never committed. For local development it points at the Azure
+Service Bus emulator (see below), which accepts the fixed, non-secret development connection string:
+
+```bash
+cd Ecommerce_Backend
+dotnet user-secrets set "ServiceBus:ConnectionString" "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+```
+
+### Local Service Bus emulator
+
+Order placement publishes to Azure Service Bus, consumed by an in-process background service. Locally
+this runs against the official Service Bus emulator, no Azure subscription required:
+
+```bash
+docker compose up -d
+```
+
+This starts `sql-edge` (the emulator's backing store) and `servicebus-emulator`, pre-configured with a
+session-enabled `order-placed` queue (see `docker/servicebus-emulator/Config.json`). The emulator speaks
+the real `Azure.Messaging.ServiceBus` protocol, so the app code doesn't know the difference.
+
 ### Run
 
 ```bash
