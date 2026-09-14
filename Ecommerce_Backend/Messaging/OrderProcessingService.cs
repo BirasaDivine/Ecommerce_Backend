@@ -40,18 +40,26 @@ namespace Ecommerce_Backend.Messaging
             _processor.ProcessMessageAsync += ProcessMessageAsync;
             _processor.ProcessErrorAsync += ProcessErrorAsync;
 
-            await _processor.StartProcessingAsync(stoppingToken);
-
             try
             {
-                await Task.Delay(Timeout.Infinite, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected on shutdown.
-            }
+                await _processor.StartProcessingAsync(stoppingToken);
 
-            await _processor.StopProcessingAsync(CancellationToken.None);
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected on shutdown.
+                }
+            }
+            finally
+            {
+                // In a try/finally so a cancellation racing StartProcessingAsync itself
+                // still tears the processor down instead of leaving it (and any in-flight
+                // session accept calls) orphaned.
+                await _processor.StopProcessingAsync(CancellationToken.None);
+            }
         }
 
         private async Task ProcessMessageAsync(ProcessSessionMessageEventArgs args)
@@ -99,16 +107,6 @@ namespace Ecommerce_Backend.Messaging
         {
             _logger.LogError(args.Exception, "Error processing Service Bus message.");
             return Task.CompletedTask;
-        }
-
-        public override async Task StopAsync(CancellationToken cancellationToken)
-        {
-            if (_processor != null)
-            {
-                await _processor.StopProcessingAsync(cancellationToken);
-            }
-
-            await base.StopAsync(cancellationToken);
         }
     }
 }

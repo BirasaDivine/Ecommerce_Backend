@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Ecommerce_Backend.Data;
-using Ecommerce_Backend.Messaging;
 
 namespace Ecommerce_Backend.Tests
 {
@@ -19,10 +18,12 @@ namespace Ecommerce_Backend.Tests
             "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
 
         private readonly string _databaseName;
+        private readonly bool _enableOrderProcessing;
 
-        public CustomWebApplicationFactory(string? databaseName = null)
+        public CustomWebApplicationFactory(string? databaseName = null, bool enableOrderProcessing = true)
         {
             _databaseName = databaseName ?? "TestDb_" + Guid.NewGuid();
+            _enableOrderProcessing = enableOrderProcessing;
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -45,18 +46,17 @@ namespace Ecommerce_Backend.Tests
                 {
                     options.UseInMemoryDatabase(_databaseName);
                 });
-            });
-        }
 
-        // Lets a test simulate the consumer being down: orders are inserted and
-        // published, but nothing drains the queue until a new processor starts.
-        public async Task StopOrderProcessingAsync()
-        {
-            var hostedServices = Services.GetServices<IHostedService>();
-            foreach (var service in hostedServices.OfType<OrderProcessingService>())
-            {
-                await service.StopAsync(CancellationToken.None);
-            }
+                // Lets a test simulate the consumer being down without ever letting it
+                // touch the queue in the first place - simpler and more reliable than
+                // starting it and stopping it, since a stopped Service Bus session
+                // processor can still leave an in-flight "accept next session" call
+                // outstanding against the broker.
+                if (!_enableOrderProcessing)
+                {
+                    services.RemoveAll(typeof(IHostedService));
+                }
+            });
         }
     }
 }

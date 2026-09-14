@@ -37,10 +37,21 @@ namespace Ecommerce_Backend.Tests.Controllers
         private record LoginResponse(string Token);
         private record OrderResponse(int Id, int VariantId, string Sku, int Quantity, decimal UnitPrice, decimal TotalPrice, OrderStatus Status, string? RejectionReason);
 
-        private async Task<string> RegisterAndLoginAsync(string email)
+        private Task<string> RegisterAndLoginAsync(string email) => RegisterAndLoginAsync(_client, email);
+
+        private static async Task<string> RegisterAndLoginAsync(HttpClient client, string email)
         {
-            await _client.PostAsJsonAsync("/api/auth/register", new { Email = email, Password = "User123!" });
-            var response = await _client.PostAsJsonAsync("/api/auth/login", new { Email = email, Password = "User123!" });
+            await client.PostAsJsonAsync("/api/auth/register", new { Email = email, Password = "User123!" });
+            var response = await client.PostAsJsonAsync("/api/auth/login", new { Email = email, Password = "User123!" });
+            var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
+            return result!.Token;
+        }
+
+        // Matches the default SeedAdmin:Email / SeedAdmin:Password seeded on startup
+        // in Development (Program.cs) - no registration needed, the account already exists.
+        private async Task<string> LoginAsSeededAdminAsync(HttpClient client)
+        {
+            var response = await client.PostAsJsonAsync("/api/auth/login", new { Email = "admin@ecommerce.local", Password = "Admin123!" });
             var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
             return result!.Token;
         }
@@ -78,9 +89,10 @@ namespace Ecommerce_Backend.Tests.Controllers
             return SeedVariant(_factory, quantity, active, overridePrice, sku);
         }
 
-        private static async Task<OrderResponse> PollUntilResolvedAsync(HttpClient client, int orderId)
+        private static async Task<OrderResponse> PollUntilResolvedAsync(HttpClient client, int orderId, TimeSpan? timeout = null)
         {
-            var deadline = DateTime.UtcNow + PollTimeout;
+            var effectiveTimeout = timeout ?? PollTimeout;
+            var deadline = DateTime.UtcNow + effectiveTimeout;
             while (DateTime.UtcNow < deadline)
             {
                 var response = await client.GetAsync($"/api/orders/{orderId}");
@@ -95,7 +107,7 @@ namespace Ecommerce_Backend.Tests.Controllers
                 await Task.Delay(PollInterval);
             }
 
-            throw new TimeoutException($"Order {orderId} did not resolve within {PollTimeout}.");
+            throw new TimeoutException($"Order {orderId} did not resolve within {effectiveTimeout}.");
         }
 
         private static Variant GetVariant(CustomWebApplicationFactory factory, int variantId)
@@ -241,7 +253,13 @@ namespace Ecommerce_Backend.Tests.Controllers
                 orderIds.Add(accepted!.Id);
             }
 
-            var resolved = await Task.WhenAll(orderIds.Select(id => PollUntilResolvedAsync(_client, id)));
+            // Poll as Admin, since each order belongs to a different buyer and
+            // GetOrderById only allows the owner or an Admin to view it.
+            using var adminClient = _factory.CreateClient();
+            var adminToken = await LoginAsSeededAdminAsync(adminClient);
+            adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+
+            var resolved = await Task.WhenAll(orderIds.Select(id => PollUntilResolvedAsync(adminClient, id)));
 
             var confirmedCount = resolved.Count(o => o.Status == OrderStatus.Confirmed);
             var rejectedCount = resolved.Count(o => o.Status == OrderStatus.Rejected);
@@ -256,18 +274,23 @@ namespace Ecommerce_Backend.Tests.Controllers
         [Test]
         public async Task ConsumerRecovery_PendingOrdersResolveExactlyOnceAfterProcessorRestart()
         {
+            // All Service Bus sessions live on one shared emulator queue, so the base
+            // fixture's own _factory (from Setup, still alive here) would otherwise run
+            // a second live consumer that competes with this test's factories for the
+            // same session. Retire it first so only this test's own hosts are listening.
+            _client.Dispose();
+            _factory.Dispose();
+
             var databaseName = "TestDb_" + Guid.NewGuid();
 
-            using var firstFactory = new CustomWebApplicationFactory(databaseName);
+            // The first host never starts the consumer at all, so it can never touch
+            // the queue - orders are placed and published but nothing drains them,
+            // simulating the app being down between placement and processing.
+            using var firstFactory = new CustomWebApplicationFactory(databaseName, enableOrderProcessing: false);
             using var firstClient = firstFactory.CreateClient();
 
-            // Give the hosted OrderProcessingService a moment to start, then stop it so
-            // the orders placed below sit Pending, queued but undelivered.
-            await Task.Delay(500);
-            await firstFactory.StopOrderProcessingAsync();
-
-            var variant = SeedVariant(firstFactory, quantity: 5, sku: "CT-RECOVERY");
-            var token = await RegisterAndLoginAsync("recoverybuyer@ecommerce.local");
+            var variant = SeedVariant(firstFactory, quantity: 5, sku: "CT-RECOVERY-" + Guid.NewGuid());
+            var token = await RegisterAndLoginAsync(firstClient, "recoverybuyer@ecommerce.local");
             firstClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var orderIds = new List<int>();
@@ -282,6 +305,7 @@ namespace Ecommerce_Backend.Tests.Controllers
 
             using var secondFactory = new CustomWebApplicationFactory(databaseName);
             using var secondClient = secondFactory.CreateClient();
+            secondClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var resolved = await Task.WhenAll(orderIds.Select(id => PollUntilResolvedAsync(secondClient, id)));
 
