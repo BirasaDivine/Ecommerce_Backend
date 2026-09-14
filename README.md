@@ -95,7 +95,7 @@ dotnet test
 | Variants | `GET/POST /api/variants...`, `PATCH /api/variants/{sku}/stock` | Admin |
 | Collections | `GET /api/collections`, `GET /api/collections/{id}` | Public |
 | Collections | `POST /api/collections`, `POST /api/collections/{id}/products` | Admin |
-| Orders | `POST /api/orders` (buy), `GET /api/orders/{id}` | Authenticated (own orders, or Admin) |
+| Orders | `POST /api/orders` (buy, `202 Accepted`), `GET /api/orders/{id}` | Authenticated (own orders, or Admin) |
 
 ## Notable design decisions
 
@@ -112,3 +112,11 @@ dotnet test
   retries against the freshly reloaded row instead of overselling.
 - **Product + variant creation**: a product and its variants are inserted in one `SaveChangesAsync`
   call, so a validation failure on any variant (e.g. a duplicate SKU) rolls back the whole product.
+- **Async checkout**: `POST /api/orders` only validates the variant and inserts the order as `Pending`,
+  then publishes an `OrderPlaced` message to Service Bus and returns `202 Accepted` immediately — no
+  stock read/lock/write happens on the request path. A background `OrderProcessingService` consumes
+  the queue via a session processor (`SessionId` = SKU), decrementing stock and marking the order
+  `Confirmed` or `Rejected` in a single `SaveChangesAsync`. Session ordering serializes same-SKU
+  processing, so overselling is prevented without an in-request retry loop. Each message handler
+  reloads the order first and no-ops if it's no longer `Pending`, so a Service Bus redelivery (e.g.
+  after a crash) resolves to exactly one effect.

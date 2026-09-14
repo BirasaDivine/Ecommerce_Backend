@@ -126,7 +126,9 @@ namespace Ecommerce_Backend.Controllers
                 Quantity = order.Quantity,
                 UnitPrice = order.UnitPrice,
                 TotalPrice = order.UnitPrice * order.Quantity,
-                OrderDate = order.OrderDate
+                OrderDate = order.OrderDate,
+                Status = order.Status,
+                RejectionReason = order.RejectionReason
             };
         }
     }
