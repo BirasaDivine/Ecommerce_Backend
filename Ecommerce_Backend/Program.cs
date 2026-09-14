@@ -1,3 +1,4 @@
+using Ecommerce_Backend.Configuration;
 using Ecommerce_Backend.Data;
 using Ecommerce_Backend.Models;
 using Ecommerce_Backend.Services;
@@ -13,6 +14,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddScoped<TokenService>();
+
+builder.Services.Configure<ServiceBusOptions>(builder.Configuration.GetSection("ServiceBus"));
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -73,7 +76,7 @@ if (app.Environment.IsDevelopment())
     if (existingAdmin == null)
     {
         var admin = new ApplicationUser { UserName = adminEmail, Email = adminEmail };
-        await userManager.CreateAsync(admin, adminPassword);
+       await userManager.CreateAsync(admin, adminPassword);
         await userManager.AddToRoleAsync(admin, "Admin");
     }
 }
