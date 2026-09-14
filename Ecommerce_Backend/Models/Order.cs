@@ -20,5 +20,9 @@ namespace Ecommerce_Backend.Models
         public decimal UnitPrice { get; set; }
 
         public DateTime OrderDate { get; set; } = DateTime.UtcNow;
+
+        public OrderStatus Status { get; set; } = OrderStatus.Pending;
+
+        public string? RejectionReason { get; set; }
     }
 }
