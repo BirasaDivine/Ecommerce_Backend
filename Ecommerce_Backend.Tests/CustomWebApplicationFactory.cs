@@ -12,8 +12,6 @@ namespace Ecommerce_Backend.Tests
 {
     public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     {
-        // The well-known, non-secret connection string the Azure Service Bus
-        // emulator (docker-compose.yml at the repo root) accepts.
         private const string EmulatorConnectionString =
             "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
 
@@ -47,11 +45,6 @@ namespace Ecommerce_Backend.Tests
                     options.UseInMemoryDatabase(_databaseName);
                 });
 
-                // Lets a test simulate the consumer being down without ever letting it
-                // touch the queue in the first place - simpler and more reliable than
-                // starting it and stopping it, since a stopped Service Bus session
-                // processor can still leave an in-flight "accept next session" call
-                // outstanding against the broker.
                 if (!_enableOrderProcessing)
                 {
                     services.RemoveAll(typeof(IHostedService));

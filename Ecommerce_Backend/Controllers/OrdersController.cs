@@ -60,10 +60,6 @@ namespace Ecommerce_Backend.Controllers
             {
                 return BadRequest("This variant is not available for purchase.");
             }
-
-            // Stock is not checked or decremented here: that happens once, in the
-            // background consumer, so the same-SKU race is resolved by Service Bus
-            // session ordering instead of an in-request concurrency retry loop.
             var unitPrice = variant.Price ?? variant.Product!.BasePrice;
 
             var order = new Order

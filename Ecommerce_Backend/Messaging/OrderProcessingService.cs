@@ -55,9 +55,6 @@ namespace Ecommerce_Backend.Messaging
             }
             finally
             {
-                // In a try/finally so a cancellation racing StartProcessingAsync itself
-                // still tears the processor down instead of leaving it (and any in-flight
-                // session accept calls) orphaned.
                 await _processor.StopProcessingAsync(CancellationToken.None);
             }
         }
@@ -77,7 +74,7 @@ namespace Ecommerce_Backend.Messaging
             var order = await context.Orders.FirstOrDefaultAsync(o => o.Id == message.OrderId);
             if (order == null || order.Status != OrderStatus.Pending)
             {
-                // Already processed - a redelivery after a restart/crash. Idempotent no-op.
+                
                 await args.CompleteMessageAsync(args.Message);
                 return;
             }
@@ -96,10 +93,6 @@ namespace Ecommerce_Backend.Messaging
             variant.Quantity -= message.Quantity;
             order.Status = OrderStatus.Confirmed;
             await context.SaveChangesAsync();
-
-            // Only complete after the state change is durably committed - if the
-            // process crashes before this point, the lock expires and Service Bus
-            // redelivers the message; the idempotency check above handles the retry.
             await args.CompleteMessageAsync(args.Message);
         }
 

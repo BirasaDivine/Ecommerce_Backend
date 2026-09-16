@@ -46,9 +46,6 @@ namespace Ecommerce_Backend.Tests.Controllers
             var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
             return result!.Token;
         }
-
-        // Matches the default SeedAdmin:Email / SeedAdmin:Password seeded on startup
-        // in Development (Program.cs) - no registration needed, the account already exists.
         private async Task<string> LoginAsSeededAdminAsync(HttpClient client)
         {
             var response = await client.PostAsJsonAsync("/api/auth/login", new { Email = "admin@ecommerce.local", Password = "Admin123!" });
@@ -274,18 +271,10 @@ namespace Ecommerce_Backend.Tests.Controllers
         [Test]
         public async Task ConsumerRecovery_PendingOrdersResolveExactlyOnceAfterProcessorRestart()
         {
-            // All Service Bus sessions live on one shared emulator queue, so the base
-            // fixture's own _factory (from Setup, still alive here) would otherwise run
-            // a second live consumer that competes with this test's factories for the
-            // same session. Retire it first so only this test's own hosts are listening.
             _client.Dispose();
             _factory.Dispose();
 
             var databaseName = "TestDb_" + Guid.NewGuid();
-
-            // The first host never starts the consumer at all, so it can never touch
-            // the queue - orders are placed and published but nothing drains them,
-            // simulating the app being down between placement and processing.
             using var firstFactory = new CustomWebApplicationFactory(databaseName, enableOrderProcessing: false);
             using var firstClient = firstFactory.CreateClient();
 
