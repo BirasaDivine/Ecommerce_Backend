@@ -1,0 +1,29 @@
+services:
+  sql-edge:
+    container_name: sql-edge
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Localtestpass1!"
+    networks:
+      - servicebus-emulator
+
+  servicebus-emulator:
+    container_name: servicebus-emulator
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    volumes:
+      - "./docker/servicebus-emulator/Config.json:/ServiceBus_Emulator/ConfigFiles/Config.json"
+    ports:
+      - "5672:5672"
+      - "5300:5300"
+    environment:
+      ACCEPT_EULA: "Y"
+      SQL_SERVER: sql-edge
+      MSSQL_SA_PASSWORD: "Localtestpass1!"
+    depends_on:
+      - sql-edge
+    networks:
+      - servicebus-emulator
+
+networks:
+  servicebus-emulator:
