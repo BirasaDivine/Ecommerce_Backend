@@ -1,6 +1,9 @@
-﻿bin/
+bin/
 obj/
 .vs/
 *.user
 .idea/
 .vscode/
+
+# Local secrets for docker compose (copy .env.example to .env)
+.env

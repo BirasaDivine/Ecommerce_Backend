@@ -1,29 +1,92 @@
+# Local stack: API + SQL Server + Azure Service Bus emulator (and its sql-edge store).
+# Copy .env.example to .env and fill in the values, then: docker compose up --build
+
+name: ecommerce-backend
+
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ecommerce-backend-api:local
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      # Development enables the Admin/User role + default admin seeding and the
+      # Scalar docs; this stack depends on the Service Bus emulator, so it is a
+      # local-only stack anyway.
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Server=db,1433;Database=EcommerceDb;User Id=sa;Password=${DB_SA_PASSWORD:?DB_SA_PASSWORD must be set in .env};TrustServerCertificate=True;MultipleActiveResultSets=true"
+      # A fresh container database has no schema; apply migrations before seeding.
+      Database__MigrateOnStartup: "true"
+      Jwt__Key: ${JWT_KEY:?JWT_KEY must be set in .env}
+      ServiceBus__ConnectionString: ${SERVICEBUS_CONNECTION_STRING:?SERVICEBUS_CONNECTION_STRING must be set in .env}
+      SeedAdmin__Email: ${SEED_ADMIN_EMAIL:?SEED_ADMIN_EMAIL must be set in .env}
+      SeedAdmin__Password: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD must be set in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+      servicebus-emulator:
+        condition: service_healthy
+    restart: on-failure:3
+    networks:
+      - backend
+
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${DB_SA_PASSWORD:?DB_SA_PASSWORD must be set in .env}
+    ports:
+      - "${DB_PORT:-1433}:1433"
+    volumes:
+      - db-data:/var/opt/mssql
+    healthcheck:
+      # Healthy only once the engine actually answers a query, not just when the container starts.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -b -Q \"SELECT 1\" -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - backend
+
+  # Backing store required by the Service Bus emulator; separate from the app's database.
   sql-edge:
-    container_name: sql-edge
     image: mcr.microsoft.com/azure-sql-edge:latest
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "Localtestpass1!"
+      MSSQL_SA_PASSWORD: ${SERVICEBUS_SQL_PASSWORD:?SERVICEBUS_SQL_PASSWORD must be set in .env}
     networks:
-      - servicebus-emulator
+      - backend
 
   servicebus-emulator:
-    container_name: servicebus-emulator
     image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
     volumes:
-      - "./docker/servicebus-emulator/Config.json:/ServiceBus_Emulator/ConfigFiles/Config.json"
+      - "./docker/servicebus-emulator/Config.json:/ServiceBus_Emulator/ConfigFiles/Config.json:ro"
     ports:
+      # Exposed on the host so the integration tests can reach the emulator too.
       - "5672:5672"
       - "5300:5300"
     environment:
       ACCEPT_EULA: "Y"
       SQL_SERVER: sql-edge
-      MSSQL_SA_PASSWORD: "Localtestpass1!"
+      MSSQL_SA_PASSWORD: ${SERVICEBUS_SQL_PASSWORD:?SERVICEBUS_SQL_PASSWORD must be set in .env}
     depends_on:
       - sql-edge
+    healthcheck:
+      # The emulator serves GET /health on its management port once its entities are loaded.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/5300 && printf \"GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -q \" 200 \"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     networks:
-      - servicebus-emulator
+      - backend
+
+volumes:
+  db-data:
 
 networks:
-  servicebus-emulator:
+  backend:
