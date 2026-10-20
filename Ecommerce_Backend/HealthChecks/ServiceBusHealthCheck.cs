@@ -19,7 +19,9 @@ namespace Ecommerce_Backend.HealthChecks
         {
             try
             {
-                using var batch = await _sender.CreateMessageBatchAsync(cancellationToken);
+                // The SDK doesn't always observe cancellation promptly while it is retrying a
+                // connection, so WaitAsync makes sure the configured timeout is honoured.
+                using var batch = await _sender.CreateMessageBatchAsync(cancellationToken).AsTask().WaitAsync(cancellationToken);
                 return HealthCheckResult.Healthy($"Queue '{_sender.EntityPath}' is reachable.");
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
