@@ -49,8 +49,6 @@ namespace Ecommerce_Backend.Tests.HealthChecks
         {
             var response = await _client.GetAsync("/health/ready");
 
-            // The overall status depends on whether the Service Bus emulator is running,
-            // so only assert which checks ran and that the (in-memory) database is healthy.
             var checks = await ReadChecksAsync(response);
             Assert.That(checks.EnumerateObject().Select(c => c.Name),
                 Is.EquivalentTo(new[] { "database", "servicebus-order-queue" }));

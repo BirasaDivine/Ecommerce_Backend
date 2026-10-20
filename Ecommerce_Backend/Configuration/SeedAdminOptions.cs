@@ -2,7 +2,6 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Ecommerce_Backend.Configuration
 {
-    // Only consumed in Development, where a default admin account is seeded.
     public class SeedAdminOptions
     {
         public static readonly string Path = "SeedAdmin";

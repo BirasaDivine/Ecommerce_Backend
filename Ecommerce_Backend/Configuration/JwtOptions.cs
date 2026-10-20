@@ -12,8 +12,6 @@ namespace Ecommerce_Backend.Configuration
         [Required(ErrorMessage = "Jwt:Audience must be set.")]
         public string Audience { get; set; } = string.Empty;
 
-        // HMAC-SHA256 needs a key of at least 256 bits; anything shorter is rejected
-        // by the token handler at first sign-in, so catch it at startup instead.
         [Required(ErrorMessage = "Jwt:Key must be set (e.g. via user secrets or the Jwt__Key environment variable).")]
         [MinLength(32, ErrorMessage = "Jwt:Key must be at least 32 characters long.")]
         public string Key { get; set; } = string.Empty;

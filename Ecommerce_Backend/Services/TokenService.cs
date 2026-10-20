@@ -31,7 +31,6 @@ namespace Ecommerce_Backend.Services
                 claims.Add(new Claim(ClaimTypes.Role, role));
             }
 
-            // Key presence/length and ExpiryMinutes are validated at startup (see JwtOptions).
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Key));
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 

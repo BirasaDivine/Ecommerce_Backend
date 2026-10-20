@@ -12,7 +12,6 @@ namespace Ecommerce_Backend.Extensions
 {
     public static class AuthenticationServiceExtensions
     {
-        // Identity for users/roles, plus JWT bearer authentication driven by JwtOptions.
         public static IServiceCollection AddAppAuthentication(this IServiceCollection services, IConfiguration configuration)
         {
             services.AddOptions<JwtOptions>()

@@ -23,8 +23,6 @@ namespace Ecommerce_Backend.Extensions
             return app;
         }
 
-        // Status per check, but never exception messages: these endpoints are anonymous
-        // and a driver error can include server names or connection details.
         private static Task WriteResponseAsync(HttpContext context, HealthReport report)
         {
             context.Response.ContentType = "application/json";

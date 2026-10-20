@@ -7,9 +7,6 @@ namespace Ecommerce_Backend.Extensions
 {
     public static class DatabaseMigrationExtensions
     {
-        // Applies pending EF Core migrations when Database:MigrateOnStartup is true.
-        // On SQL Server, EF Core takes a database-level lock while migrating, so
-        // several instances starting at once won't apply the same migration twice.
         public static async Task ApplyDatabaseMigrationsAsync(this WebApplication app)
         {
             var options = app.Services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
@@ -21,8 +18,6 @@ namespace Ecommerce_Backend.Extensions
             using var scope = app.Services.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            // Non-relational providers (e.g. the in-memory database used by tests)
-            // have no migrations to apply.
             if (!context.Database.IsRelational())
             {
                 return;
