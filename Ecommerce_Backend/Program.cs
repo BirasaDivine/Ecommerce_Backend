@@ -18,7 +18,10 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddScoped<TokenService>();
 
-builder.Services.Configure<ServiceBusOptions>(builder.Configuration.GetSection("ServiceBus"));
+builder.Services.AddOptions<ServiceBusOptions>()
+    .Bind(builder.Configuration.GetSection(ServiceBusOptions.Path))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 builder.Services.AddSingleton(sp =>
     new ServiceBusClient(sp.GetRequiredService<IOptions<ServiceBusOptions>>().Value.ConnectionString));
 builder.Services.AddSingleton<IOrderEventPublisher, ServiceBusOrderEventPublisher>();
@@ -37,25 +40,37 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
 
 
 // JWT authentication
-var jwtKey = builder.Configuration["Jwt:Key"]!;
+builder.Services.AddOptions<JwtOptions>()
+    .Bind(builder.Configuration.GetSection(JwtOptions.Path))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 })
-.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
+.AddJwtBearer();
+
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IOptions<JwtOptions>>((options, jwtOptions) =>
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
-    };
-});
+        var jwt = jwtOptions.Value;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwt.Issuer,
+            ValidAudience = jwt.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Key))
+        };
+    });
+
+builder.Services.AddOptions<SeedAdminOptions>()
+    .Bind(builder.Configuration.GetSection(SeedAdminOptions.Path))
+    .ValidateDataAnnotations();
 
 var app = builder.Build();
 
@@ -76,8 +91,9 @@ if (app.Environment.IsDevelopment())
         }
     }
 
-    var adminEmail = builder.Configuration["SeedAdmin:Email"] ?? "admin@ecommerce.local";
-    var adminPassword = builder.Configuration["SeedAdmin:Password"] ?? "Admin123!";
+    var seedAdmin = scope.ServiceProvider.GetRequiredService<IOptions<SeedAdminOptions>>().Value;
+    var adminEmail = seedAdmin.Email;
+    var adminPassword = seedAdmin.Password;
     var existingAdmin = await userManager.FindByEmailAsync(adminEmail);
 
     if (existingAdmin == null)
