@@ -1,3 +1,4 @@
+using Ecommerce_Backend.Configuration;
 using Ecommerce_Backend.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +18,9 @@ namespace Ecommerce_Backend.Extensions
             }
 
             services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
+
+            services.AddOptions<DatabaseOptions>()
+                .Bind(configuration.GetSection(DatabaseOptions.Path));
 
             return services;
         }

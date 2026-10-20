@@ -15,6 +15,7 @@ builder.Services.AddAppHealthChecks(builder.Configuration);
 
 var app = builder.Build();
 
+await app.ApplyDatabaseMigrationsAsync();
 await app.SeedDevelopmentDataAsync();
 
 if (app.Environment.IsDevelopment())
