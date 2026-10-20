@@ -11,6 +11,7 @@ builder.Services.AddAppAuthentication(builder.Configuration);
 builder.Services.AddServiceBusMessaging(builder.Configuration);
 builder.Services.AddAppServices();
 builder.Services.AddDevelopmentSeedOptions(builder.Configuration);
+builder.Services.AddAppHealthChecks(builder.Configuration);
 
 var app = builder.Build();
 
@@ -26,6 +27,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapAppHealthChecks();
 
 app.Run();
 
