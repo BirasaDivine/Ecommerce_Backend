@@ -1,7 +1,5 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
-using Microsoft.Extensions.Options;
-using Ecommerce_Backend.Configuration;
 
 namespace Ecommerce_Backend.Messaging
 {
@@ -9,9 +7,9 @@ namespace Ecommerce_Backend.Messaging
     {
         private readonly ServiceBusSender _sender;
 
-        public ServiceBusOrderEventPublisher(ServiceBusClient client, IOptions<ServiceBusOptions> options)
+        public ServiceBusOrderEventPublisher(ServiceBusSender sender)
         {
-            _sender = client.CreateSender(options.Value.QueueName);
+            _sender = sender;
         }
 
         public async Task PublishOrderPlacedAsync(OrderPlacedMessage message, CancellationToken cancellationToken = default)
