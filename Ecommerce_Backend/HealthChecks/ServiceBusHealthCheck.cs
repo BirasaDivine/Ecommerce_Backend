@@ -3,33 +3,35 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Ecommerce_Backend.HealthChecks
 {
-    // Checks a single queue through the same keyed ServiceBusSender the app publishes with.
-    // CreateMessageBatchAsync attaches the send link to the queue (without sending anything),
-    // so it fails if the broker is unreachable or the queue doesn't exist.
     public class ServiceBusHealthCheck : IHealthCheck
     {
-        private readonly ServiceBusSender _sender;
+        private readonly ServiceBusClient _client;
+        private readonly string _queueName;
 
-        public ServiceBusHealthCheck(ServiceBusSender sender)
+        public ServiceBusHealthCheck(ServiceBusClient client, string queueName)
         {
-            _sender = sender;
+            _client = client;
+            _queueName = queueName;
         }
 
         public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
         {
+            var sender = _client.CreateSender(_queueName);
             try
             {
-                // The SDK doesn't always observe cancellation promptly while it is retrying a
-                // connection, so WaitAsync makes sure the configured timeout is honoured.
-                using var batch = await _sender.CreateMessageBatchAsync(cancellationToken).AsTask().WaitAsync(cancellationToken);
-                return HealthCheckResult.Healthy($"Queue '{_sender.EntityPath}' is reachable.");
+                using var batch = await sender.CreateMessageBatchAsync(cancellationToken).AsTask().WaitAsync(cancellationToken);
+                return HealthCheckResult.Healthy($"Queue '{_queueName}' is reachable.");
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
                 return new HealthCheckResult(
                     context.Registration.FailureStatus,
-                    $"Queue '{_sender.EntityPath}' is not reachable.",
+                    $"Queue '{_queueName}' is not reachable.",
                     ex);
+            }
+            finally
+            {
+                _ = sender.DisposeAsync().AsTask();
             }
         }
     }
