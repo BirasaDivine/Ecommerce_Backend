@@ -72,7 +72,9 @@ docker compose up --build
 ```
 
 - The API listens on `http://localhost:8080` (`API_PORT` to change it); Scalar is at `/scalar/v1`.
-- The API container only starts once SQL Server answers queries and the emulator reports healthy.
+- The API container only starts once SQL Server answers queries and the emulator's `/health` endpoint
+  returns 200 (checked by the one-shot `servicebus-emulator-ready` container, since the emulator
+  image has no shell to run a healthcheck in).
 - It runs with `Database__MigrateOnStartup=true`, so a fresh database volume gets its schema on first
   start, and then seeds the `Admin`/`User` roles and the admin from `SEED_ADMIN_EMAIL` /
   `SEED_ADMIN_PASSWORD`. EF Core takes a database lock while migrating, so concurrent instances are
