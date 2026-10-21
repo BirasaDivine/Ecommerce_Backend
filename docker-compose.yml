@@ -16,7 +16,7 @@ services:
       # Scalar docs; this stack depends on the Service Bus emulator, so it is a
       # local-only stack anyway.
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Server=db,1433;Database=EcommerceDb;User Id=sa;Password=${DB_SA_PASSWORD:?DB_SA_PASSWORD must be set in .env};TrustServerCertificate=True;MultipleActiveResultSets=true"
+      Database__ConnectionString: "Server=db,1433;Database=EcommerceDb;User Id=sa;Password=${DB_SA_PASSWORD:?DB_SA_PASSWORD must be set in .env};TrustServerCertificate=True;MultipleActiveResultSets=true"
       # A fresh container database has no schema; apply migrations before seeding.
       Database__MigrateOnStartup: "true"
       Jwt__Key: ${JWT_KEY:?JWT_KEY must be set in .env}

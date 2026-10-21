@@ -57,6 +57,7 @@ namespace Ecommerce_Backend.Tests.HealthChecks
 
         [TestCase("Jwt:Key", "too-short", "Jwt:Key")]
         [TestCase("HealthChecks:TimeoutSeconds", "0", "HealthChecks:TimeoutSeconds")]
+        [TestCase("Database:ConnectionString", "", "Database:ConnectionString")]
         public void InvalidConfiguration_FailsAtStartup(string key, string value, string expectedMessageFragment)
         {
             using var factory = new CustomWebApplicationFactory(enableOrderProcessing: false)

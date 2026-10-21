@@ -28,7 +28,7 @@ An ASP.NET Core Web API for an e-commerce inventory and order management platfor
 
 ### Configuration
 
-`appsettings.json` holds the connection string and non-secret JWT settings (`Issuer`, `Audience`,
+`appsettings.json` holds the connection string (`Database:ConnectionString`) and non-secret JWT settings (`Issuer`, `Audience`,
 `ExpiryMinutes`). `appsettings.Development.json` ships a placeholder `Jwt:Key` for local development
 only — it must not be reused anywhere else. For a real environment, override it with user secrets
 or an environment variable instead of committing a key:
@@ -58,6 +58,7 @@ dotnet user-secrets set "ServiceBus:ConnectionString" "Endpoint=sb://localhost;S
 
 | Setting | Default | Purpose |
 |---|---|---|
+| `Database:ConnectionString` | LocalDB `EcommerceDb` | SQL Server connection string (`Database__ConnectionString` as an environment variable) |
 | `Database:MigrateOnStartup` | `false` | Apply pending EF Core migrations when the app starts (enabled in Docker Compose) |
 | `HealthChecks:TimeoutSeconds` | `5` | Per-check timeout for the health endpoints (1–120) |
 
