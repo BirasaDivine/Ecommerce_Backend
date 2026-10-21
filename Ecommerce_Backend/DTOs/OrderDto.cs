@@ -1,3 +1,5 @@
+using Ecommerce_Backend.Models;
+
 namespace Ecommerce_Backend.DTOs
 {
     public class OrderDto
@@ -9,5 +11,7 @@ namespace Ecommerce_Backend.DTOs
         public decimal UnitPrice { get; set; }
         public decimal TotalPrice { get; set; }
         public DateTime OrderDate { get; set; }
+        public OrderStatus Status { get; set; }
+        public string? RejectionReason { get; set; }
     }
 }

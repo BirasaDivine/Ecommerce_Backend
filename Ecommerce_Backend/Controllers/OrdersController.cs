@@ -1,5 +1,6 @@
 using Ecommerce_Backend.Data;
 using Ecommerce_Backend.DTOs;
+using Ecommerce_Backend.Messaging;
 using Ecommerce_Backend.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,10 +25,12 @@ namespace Ecommerce_Backend.Controllers
     public class OrdersController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IOrderEventPublisher _publisher;
 
-        public OrdersController(AppDbContext context)
+        public OrdersController(AppDbContext context, IOrderEventPublisher publisher)
         {
             _context = context;
+            _publisher = publisher;
         }
 
         [HttpPost]
@@ -44,55 +47,43 @@ namespace Ecommerce_Backend.Controllers
                 return Unauthorized();
             }
 
-            // Quantity is an optimistic-concurrency token (see AppDbContext), so if
-            // another purchase decrements it between our read and our write, SaveChanges
-            // throws instead of silently overselling; we reload and retry in that case.
-            while (true)
+            var variant = await _context.Variants
+                .Include(v => v.Product)
+                .FirstOrDefaultAsync(v => v.Id == request.VariantId);
+
+            if (variant == null)
             {
-                var variant = await _context.Variants
-                    .Include(v => v.Product)
-                    .FirstOrDefaultAsync(v => v.Id == request.VariantId);
-
-                if (variant == null)
-                {
-                    return NotFound("Variant not found.");
-                }
-
-                if (!variant.Active)
-                {
-                    return BadRequest("This variant is not available for purchase.");
-                }
-
-                if (variant.Quantity < request.Quantity)
-                {
-                    return BadRequest("Insufficient stock for the requested quantity.");
-                }
-
-                var unitPrice = variant.Price ?? variant.Product!.BasePrice;
-                variant.Quantity -= request.Quantity;
-
-                var order = new Order
-                {
-                    ApplicationUserId = userId,
-                    VariantId = variant.Id,
-                    Quantity = request.Quantity,
-                    UnitPrice = unitPrice,
-                    OrderDate = DateTime.UtcNow
-                };
-
-                _context.Orders.Add(order);
-
-                try
-                {
-                    await _context.SaveChangesAsync();
-                    return CreatedAtAction(nameof(GetOrderById), new { id = order.Id }, ToDto(order, variant.Sku));
-                }
-                catch (DbUpdateConcurrencyException)
-                {
-                    _context.Entry(order).State = EntityState.Detached;
-                    _context.Entry(variant).State = EntityState.Detached;
-                }
+                return NotFound("Variant not found.");
             }
+
+            if (!variant.Active)
+            {
+                return BadRequest("This variant is not available for purchase.");
+            }
+            var unitPrice = variant.Price ?? variant.Product!.BasePrice;
+
+            var order = new Order
+            {
+                ApplicationUserId = userId,
+                VariantId = variant.Id,
+                Quantity = request.Quantity,
+                UnitPrice = unitPrice,
+                OrderDate = DateTime.UtcNow,
+                Status = OrderStatus.Pending
+            };
+
+            _context.Orders.Add(order);
+            await _context.SaveChangesAsync();
+
+            await _publisher.PublishOrderPlacedAsync(new OrderPlacedMessage
+            {
+                OrderId = order.Id,
+                VariantId = variant.Id,
+                Sku = variant.Sku,
+                Quantity = request.Quantity
+            });
+
+            return AcceptedAtAction(nameof(GetOrderById), new { id = order.Id }, ToDto(order, variant.Sku));
         }
 
         [HttpGet("{id}")]
@@ -131,7 +122,9 @@ namespace Ecommerce_Backend.Controllers
                 Quantity = order.Quantity,
                 UnitPrice = order.UnitPrice,
                 TotalPrice = order.UnitPrice * order.Quantity,
-                OrderDate = order.OrderDate
+                OrderDate = order.OrderDate,
+                Status = order.Status,
+                RejectionReason = order.RejectionReason
             };
         }
     }
