@@ -8,6 +8,7 @@ builder.Services.AddAppDatabase(builder.Configuration);
 builder.Services.AddServiceBusMessaging(builder.Configuration, roles);
 builder.Services.AddAppHealthChecks(builder.Configuration);
 builder.Services.AddAppVersion(builder.Configuration);
+builder.Services.AddAppTelemetry(builder.Configuration);
 
 if (roles.ApiEnabled)
 {
