@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Ecommerce_Backend.Configuration;
 using Ecommerce_Backend.Data;
 using Ecommerce_Backend.Models;
+using Ecommerce_Backend.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -13,6 +15,7 @@ namespace Ecommerce_Backend.Messaging
         private readonly ServiceBusClient _client;
         private readonly ServiceBusOptions _options;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly OrderMetrics _metrics;
         private readonly ILogger<OrderProcessingService> _logger;
         private ServiceBusSessionProcessor? _processor;
 
@@ -20,11 +23,13 @@ namespace Ecommerce_Backend.Messaging
             ServiceBusClient client,
             IOptions<ServiceBusOptions> options,
             IServiceScopeFactory scopeFactory,
+            OrderMetrics metrics,
             ILogger<OrderProcessingService> logger)
         {
             _client = client;
             _options = options.Value;
             _scopeFactory = scopeFactory;
+            _metrics = metrics;
             _logger = logger;
         }
 
@@ -61,6 +66,28 @@ namespace Ecommerce_Backend.Messaging
 
         private async Task ProcessMessageAsync(ProcessSessionMessageEventArgs args)
         {
+            // Continue the trace of the request that placed the order (traceparent from the message).
+            var parentContext = ServiceBusTraceContext.Extract(args.Message);
+            using var processActivity = AppTelemetry.ActivitySource.StartActivity(
+                "order-placed process", ActivityKind.Consumer, parentContext);
+            processActivity?.SetTag("messaging.system", "servicebus");
+            processActivity?.SetTag("messaging.destination.name", _options.QueueName);
+            processActivity?.SetTag("messaging.operation", "process");
+
+            try
+            {
+                await ProcessOrderAsync(args, processActivity);
+            }
+            catch (Exception ex)
+            {
+                // Only the exception type: messages can carry data we do not want in a trace.
+                processActivity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
+                throw;
+            }
+        }
+
+        private async Task ProcessOrderAsync(ProcessSessionMessageEventArgs args, Activity? processActivity)
+        {
             var message = JsonSerializer.Deserialize<OrderPlacedMessage>(args.Message.Body.ToString());
             if (message == null)
             {
@@ -68,23 +95,38 @@ namespace Ecommerce_Backend.Messaging
                 return;
             }
 
+            processActivity?.SetTag("order.id", message.OrderId);
+
             using var scope = _scopeFactory.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
             var order = await context.Orders.FirstOrDefaultAsync(o => o.Id == message.OrderId);
             if (order == null || order.Status != OrderStatus.Pending)
             {
-                
+                processActivity?.SetTag("order.outcome", "skipped");
+                _logger.LogInformation("Order {OrderId} skipped: not found or already processed.", message.OrderId);
                 await args.CompleteMessageAsync(args.Message);
                 return;
             }
 
+            using var stockCheck = AppTelemetry.ActivitySource.StartActivity("order.stock-check");
+            stockCheck?.SetTag("order.id", order.Id);
+            stockCheck?.SetTag("variant.sku", message.Sku);
+
             var variant = await context.Variants.FirstOrDefaultAsync(v => v.Id == message.VariantId);
             if (variant == null || variant.Quantity < message.Quantity)
             {
+                var reason = variant == null ? RejectionReasons.VariantNotFound : RejectionReasons.InsufficientStock;
+
                 order.Status = OrderStatus.Rejected;
                 order.RejectionReason = "Insufficient stock";
                 await context.SaveChangesAsync();
+
+                stockCheck?.SetTag("order.outcome", OrderMetrics.RejectedOutcome);
+                stockCheck?.SetTag("order.rejection_reason", reason);
+                processActivity?.SetTag("order.outcome", OrderMetrics.RejectedOutcome);
+                _metrics.OrderRejected(reason, order.OrderDate);
+
                 _logger.LogInformation("Order {OrderId} rejected: insufficient stock.", order.Id);
                 await args.CompleteMessageAsync(args.Message);
                 return;
@@ -93,6 +135,12 @@ namespace Ecommerce_Backend.Messaging
             variant.Quantity -= message.Quantity;
             order.Status = OrderStatus.Confirmed;
             await context.SaveChangesAsync();
+
+            stockCheck?.SetTag("order.outcome", OrderMetrics.ConfirmedOutcome);
+            processActivity?.SetTag("order.outcome", OrderMetrics.ConfirmedOutcome);
+            _metrics.OrderConfirmed(order.OrderDate);
+
+            _logger.LogInformation("Order {OrderId} confirmed.", order.Id);
             await args.CompleteMessageAsync(args.Message);
         }
 

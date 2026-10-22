@@ -1,4 +1,5 @@
 using Ecommerce_Backend.Configuration;
+using Ecommerce_Backend.Telemetry;
 using Microsoft.Extensions.Options;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
@@ -44,6 +45,9 @@ namespace Ecommerce_Backend.Extensions
                     .AddRuntimeInstrumentation()
                     .AddMeter(TelemetryNames.MeterName))
                 .WithLogging();
+
+            services.AddSingleton<OrderMetrics>();
+            services.AddHostedService<OrderMetricsInitializer>();
 
             services.ConfigureOpenTelemetryTracerProvider((sp, builder) =>
             {

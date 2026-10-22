@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -34,7 +34,9 @@ namespace Ecommerce_Backend.Tests
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ServiceBus:ConnectionString"] = EmulatorConnectionString,
-                    ["ServiceBus:QueueName"] = TestQueueName
+                    ["ServiceBus:QueueName"] = TestQueueName,
+                    // Keep the console exporter out of the test output; tests that need spans add their own exporter.
+                    ["Telemetry:Exporter"] = "None"
                 });
             });
 
