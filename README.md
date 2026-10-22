@@ -165,7 +165,7 @@ Images are published to GitHub Container Registry:
 
 | Tag | When it is created | Meaning |
 |---|---|---|
-| `abc1234` (7 characters) | Every merge to `main` and every `v*` tag | The commit the image was built from |
+| `sha-abc1234` (`sha-` plus the 7-character short SHA) | Every merge to `main` and every `v*` tag | The commit the image was built from |
 | `1.2.0` | When the tag `v1.2.0` is pushed | A released version; the same image also has its commit tag |
 
 There is deliberately no `latest` tag. The running application reports the commit it was built from
