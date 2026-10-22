@@ -1,33 +1,27 @@
 using Ecommerce_Backend.Extensions;
-using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+var roles = builder.Services.AddAppRoles(builder.Configuration);
 
 builder.Services.AddAppDatabase(builder.Configuration);
-builder.Services.AddAppAuthentication(builder.Configuration);
-builder.Services.AddServiceBusMessaging(builder.Configuration);
-builder.Services.AddAppServices();
-builder.Services.AddDevelopmentSeedOptions(builder.Configuration);
+builder.Services.AddServiceBusMessaging(builder.Configuration, roles);
 builder.Services.AddAppHealthChecks(builder.Configuration);
+
+if (roles.ApiEnabled)
+{
+    builder.Services.AddApiServices(builder.Configuration);
+}
 
 var app = builder.Build();
 
 await app.ApplyDatabaseMigrationsAsync();
-await app.SeedDevelopmentDataAsync();
 
-if (app.Environment.IsDevelopment())
+if (roles.ApiEnabled)
 {
-    app.MapOpenApi();
-    app.MapScalarApiReference();
+    await app.UseApiPipelineAsync();
 }
 
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.MapControllers();
 app.MapAppHealthChecks();
 
 app.Run();

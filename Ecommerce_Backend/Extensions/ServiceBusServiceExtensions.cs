@@ -7,7 +7,7 @@ namespace Ecommerce_Backend.Extensions
 {
     public static class ServiceBusServiceExtensions
     {
-        public static IServiceCollection AddServiceBusMessaging(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection AddServiceBusMessaging(this IServiceCollection services, IConfiguration configuration, AppRoles roles)
         {
             services.AddOptions<ServiceBusOptions>()
                 .Bind(configuration.GetSection(ServiceBusOptions.Path))
@@ -26,7 +26,10 @@ namespace Ecommerce_Backend.Extensions
                 return new ServiceBusOrderEventPublisher(sp.GetRequiredKeyedService<ServiceBusSender>(queueName));
             });
 
-            services.AddHostedService<OrderProcessingService>();
+            if (roles.ConsumerEnabled)
+            {
+                services.AddHostedService<OrderProcessingService>();
+            }
 
             return services;
         }
