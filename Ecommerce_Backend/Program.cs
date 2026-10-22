@@ -15,8 +15,6 @@ if (roles.ApiEnabled)
 
 var app = builder.Build();
 
-await app.ApplyDatabaseMigrationsAsync();
-
 if (roles.ApiEnabled)
 {
     await app.UseApiPipelineAsync();

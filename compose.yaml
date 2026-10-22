@@ -1,13 +1,43 @@
-# Local stack: API + SQL Server + Azure Service Bus emulator (and its sql-edge store).
+# Local stack: API + consumer + one-off migrator + SQL Server + Azure Service Bus emulator
+# (and the emulator's sql-edge store).
 # Copy .env.example to .env and fill in the values, then: docker compose up --build
 
 name: ecommerce-backend
 
+# The api and the consumer are the same image started in different roles.
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+
+x-database-connection: &database-connection
+  Database__ConnectionString: "Server=db,1433;Database=EcommerceDb;User Id=sa;Password=${DB_SA_PASSWORD:?DB_SA_PASSWORD must be set in .env};TrustServerCertificate=True;MultipleActiveResultSets=true"
+
+x-servicebus-connection: &servicebus-connection
+  ServiceBus__ConnectionString: ${SERVICEBUS_CONNECTION_STRING:?SERVICEBUS_CONNECTION_STRING must be set in .env}
+
 services:
-  api:
+  # One-off job: applies the EF Core migrations, then exits 0. The api and consumer
+  # wait for it to finish successfully, so tables exist before anything serves traffic.
+  migrator:
     build:
-      context: .
-      dockerfile: Dockerfile
+      <<: *app-build
+      target: migrator
+    image: ecommerce-backend-migrator:local
+    entrypoint:
+      - sh
+      - -c
+      - exec ./efbundle --connection "$$Database__ConnectionString"
+    environment:
+      <<: *database-connection
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - backend
+
+  api:
+    build: *app-build
     image: ecommerce-backend-api:local
     ports:
       - "${API_PORT:-8080}:8080"
@@ -16,16 +46,36 @@ services:
       # Scalar docs; this stack depends on the Service Bus emulator, so it is a
       # local-only stack anyway.
       ASPNETCORE_ENVIRONMENT: Development
-      Database__ConnectionString: "Server=db,1433;Database=EcommerceDb;User Id=sa;Password=${DB_SA_PASSWORD:?DB_SA_PASSWORD must be set in .env};TrustServerCertificate=True;MultipleActiveResultSets=true"
-      # A fresh container database has no schema; apply migrations before seeding.
-      Database__MigrateOnStartup: "true"
+      # The api only takes requests and publishes orders; the consumer service processes them.
+      Consumer__Enabled: "false"
+      <<: [*database-connection, *servicebus-connection]
       Jwt__Key: ${JWT_KEY:?JWT_KEY must be set in .env}
-      ServiceBus__ConnectionString: ${SERVICEBUS_CONNECTION_STRING:?SERVICEBUS_CONNECTION_STRING must be set in .env}
       SeedAdmin__Email: ${SEED_ADMIN_EMAIL:?SEED_ADMIN_EMAIL must be set in .env}
       SeedAdmin__Password: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD must be set in .env}
     depends_on:
       db:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+      servicebus-emulator-ready:
+        condition: service_completed_successfully
+    restart: on-failure:3
+    networks:
+      - backend
+
+  # Same image as the api, started with the HTTP API switched off: it only reads the
+  # order-placed queue and updates orders. It can be stopped and started on its own.
+  consumer:
+    build: *app-build
+    image: ecommerce-backend-api:local
+    environment:
+      Api__Enabled: "false"
+      <<: [*database-connection, *servicebus-connection]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       servicebus-emulator-ready:
         condition: service_completed_successfully
     restart: on-failure:3
@@ -80,7 +130,7 @@ services:
 
   # The emulator image is distroless (no shell or curl), so it can't run its own
   # healthcheck. This one-shot container polls the emulator's /health endpoint
-  # from the network and exits 0 once it answers, which gates the api.
+  # from the network and exits 0 once it answers, which gates the api and consumer.
   servicebus-emulator-ready:
     image: curlimages/curl:8.11.1
     command:

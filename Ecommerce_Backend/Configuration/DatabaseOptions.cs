@@ -9,6 +9,5 @@ namespace Ecommerce_Backend.Configuration
         [Required(ErrorMessage = "Database:ConnectionString must be set (e.g. via user secrets or the Database__ConnectionString environment variable).")]
         public string ConnectionString { get; set; } = string.Empty;
 
-        public bool MigrateOnStartup { get; set; }
     }
 }
