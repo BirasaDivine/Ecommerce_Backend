@@ -50,7 +50,7 @@ On a push to `main` or a tag starting with `v`, the `publish` job logs in to `gh
 - `ghcr.io/birasadivine/ecommerce_backend-api` (the api and the consumer, same image)
 - `ghcr.io/birasadivine/ecommerce_backend-migrator`
 
-Tags: the 7-character commit SHA always, plus `1.2.0` when the tag `v1.2.0` is pushed. There is no `latest` tag, because `latest` does not tell you which commit you are running.
+Tags: `sha-` plus the 7-character commit SHA always (for example `sha-b46ef00`), plus `1.2.0` when the tag `v1.2.0` is pushed. There is no `latest` tag, because `latest` does not tell you which commit you are running.
 
 ### Secrets
 
