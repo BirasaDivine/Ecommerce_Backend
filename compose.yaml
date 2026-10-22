@@ -8,6 +8,9 @@ name: ecommerce-backend
 x-app-build: &app-build
   context: .
   dockerfile: Dockerfile
+  args:
+    # Reported by /version; CI passes the commit SHA, local builds report "unknown".
+    COMMIT_SHA: ${COMMIT_SHA:-unknown}
 
 x-database-connection: &database-connection
   Database__ConnectionString: "Server=db,1433;Database=EcommerceDb;User Id=sa;Password=${DB_SA_PASSWORD:?DB_SA_PASSWORD must be set in .env};TrustServerCertificate=True;MultipleActiveResultSets=true"

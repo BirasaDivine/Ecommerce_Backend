@@ -1,5 +1,7 @@
 # Ecommerce Backend
 
+[![CI](https://github.com/BirasaDivine/Ecommerce_Backend/actions/workflows/ci.yml/badge.svg)](https://github.com/BirasaDivine/Ecommerce_Backend/actions/workflows/ci.yml)
+
 An ASP.NET Core Web API for an e-commerce inventory and order management platform.
 
 ## Stack
@@ -129,6 +131,62 @@ the real `Azure.Messaging.ServiceBus` protocol, so the app code doesn't know the
 
 Both return `200` when healthy and `503` otherwise, with a JSON status per check (no exception
 details, since the endpoints are anonymous).
+
+## CI/CD
+
+The workflow in `.github/workflows/ci.yml` runs on every push and pull request:
+
+| Job | What it checks |
+|---|---|
+| Build and test | Restores (NuGet cached), builds in Release, starts the Service Bus emulator from `compose.yaml`, runs the full NUnit suite (unit and integration), uploads the `.trx` results as the `test-results` artefact |
+| Migration check | `dotnet ef migrations has-pending-model-changes` fails if the model changed without a migration |
+| Docker build | Builds the app image and the migrator image (nothing is pushed) so a broken Dockerfile is caught before merge |
+| Container smoke test | Runs `scripts/smoke-test.ps1` against the compose stack |
+| Publish images | Only after all of the above pass, on a push to `main` or a `v*` tag, never for pull requests |
+
+**Integration tests in CI.** The tests need a real Service Bus emulator, which needs a mounted queue
+config file. A plain GitHub service container cannot mount a file from the repository, so the job runs
+the repo's own `compose.yaml` (emulator plus its SQL store) instead. Testcontainers would work too and
+would also start from a plain `dotnet test`, but it needs extra test code and a second place that
+describes the emulator; compose keeps one source of truth.
+
+**Secrets.** No credentials are stored in the workflow or the repository. The jobs that start containers
+generate a throwaway `.env` with random, masked passwords (`scripts/make-ci-env.sh`), and publishing uses
+the built-in `GITHUB_TOKEN`. Third-party actions are pinned to commit SHAs.
+
+### Container images
+
+Images are published to GitHub Container Registry:
+
+| Image | Used for |
+|---|---|
+| `ghcr.io/birasadivine/ecommerce_backend-api` | The `api` and `consumer` services (same image, different `Api__Enabled` / `Consumer__Enabled`) |
+| `ghcr.io/birasadivine/ecommerce_backend-migrator` | The one-off migration job |
+
+| Tag | When it is created | Meaning |
+|---|---|---|
+| `abc1234` (7 characters) | Every merge to `main` and every `v*` tag | The commit the image was built from |
+| `1.2.0` | When the tag `v1.2.0` is pushed | A released version; the same image also has its commit tag |
+
+There is deliberately no `latest` tag. The running application reports the commit it was built from
+(the full SHA, passed in as the `COMMIT_SHA` build argument) on an anonymous endpoint:
+
+```powershell
+curl.exe http://localhost:8080/version   # {"commit":"<full sha>"}
+```
+
+Locally, `docker compose build` reports `unknown` unless `COMMIT_SHA` is set in the environment.
+To check a published image, pull it, start it with the settings it needs (database and Service Bus
+connection strings, `Jwt__Key`, see the configuration table above) and request `/version`.
+
+### Pipeline gate evidence
+
+| Run | Result | Link |
+|---|---|---|
+| Pull request with a deliberately failing test | Workflow fails, merge blocked | _add the workflow run link_ |
+| Same pull request after removing the failing test | Workflow passes, merge allowed | _add the workflow run link_ |
+
+`main` is protected: the four checks above must pass before a pull request can be merged.
 
 ### Run
 
