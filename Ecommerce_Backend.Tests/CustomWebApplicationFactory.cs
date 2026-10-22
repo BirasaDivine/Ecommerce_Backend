@@ -15,6 +15,9 @@ namespace Ecommerce_Backend.Tests
         private const string EmulatorConnectionString =
             "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
 
+        // Dedicated queue so a running api/consumer container never competes with the tests for messages.
+        private const string TestQueueName = "order-placed-tests";
+
         private readonly string _databaseName;
         private readonly bool _enableOrderProcessing;
 
@@ -30,7 +33,8 @@ namespace Ecommerce_Backend.Tests
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["ServiceBus:ConnectionString"] = EmulatorConnectionString
+                    ["ServiceBus:ConnectionString"] = EmulatorConnectionString,
+                    ["ServiceBus:QueueName"] = TestQueueName
                 });
             });
 

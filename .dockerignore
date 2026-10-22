@@ -1,0 +1,27 @@
+# Build output and IDE state
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/.idea/
+**/*.user
+
+# Source control and Docker/CI files the image doesn't need
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+compose*.yaml
+docker/
+README.md
+
+# The test project is never part of the runtime image
+Ecommerce_Backend.Tests/
+
+# Local secrets and database files
+**/.env
+**/.env.*
+**/secrets.json
+**/*.pfx
+**/*.mdf
+**/*.ldf

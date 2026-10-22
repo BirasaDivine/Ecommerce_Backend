@@ -17,6 +17,20 @@
               "RequiresDuplicateDetection": false,
               "RequiresSession": true
             }
+          },
+          {
+            "Name": "order-placed-tests",
+            "Properties": {
+              "DeadLetteringOnMessageExpiration": false,
+              "DefaultMessageTimeToLive": "PT1H",
+              "DuplicateDetectionHistoryTimeWindow": "PT20S",
+              "ForwardDeadLetteredMessagesTo": "",
+              "ForwardTo": "",
+              "LockDuration": "PT10S",
+              "MaxDeliveryCount": 3,
+              "RequiresDuplicateDetection": false,
+              "RequiresSession": true
+            }
           }
         ],
         "Topics": []
