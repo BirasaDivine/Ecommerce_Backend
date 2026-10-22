@@ -25,3 +25,5 @@ Ecommerce_Backend.Tests/
 **/*.pfx
 **/*.mdf
 **/*.ldf
+observability/
+scripts/
