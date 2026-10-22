@@ -59,13 +59,22 @@ dotnet user-secrets set "ServiceBus:ConnectionString" "Endpoint=sb://localhost;S
 | Setting | Default | Purpose |
 |---|---|---|
 | `Database:ConnectionString` | LocalDB `EcommerceDb` | SQL Server connection string (`Database__ConnectionString` as an environment variable) |
-| `Database:MigrateOnStartup` | `false` | Apply pending EF Core migrations when the app starts (enabled in Docker Compose) |
+| `Api:Enabled` | `true` | Serve the HTTP API (controllers, auth, seeding). The `consumer` compose service sets it to `false` |
+| `Consumer:Enabled` | `true` | Run the order-processing consumer. The `api` compose service sets it to `false` |
 | `HealthChecks:TimeoutSeconds` | `5` | Per-check timeout for the health endpoints (1–120) |
 
 ### Run everything with Docker Compose
 
-The compose file runs the API, its SQL Server database, the Service Bus emulator and the emulator's
-`sql-edge` backing store. Secrets come from a git-ignored `.env` file:
+The compose file runs these services. Secrets come from a git-ignored `.env` file:
+
+| Service | Role |
+|---|---|
+| `migrator` | One-off job: applies the EF Core migrations with a migration bundle, then exits |
+| `api` | HTTP API only (`Consumer__Enabled=false`) |
+| `consumer` | Same image with the HTTP API switched off (`Api__Enabled=false`); processes the `order-placed` queue |
+| `db` | SQL Server 2022 with the `db-data` volume |
+| `servicebus-emulator`, `sql-edge` | Local Service Bus and its backing store |
+| `servicebus-emulator-ready` | One-shot probe that waits for the emulator's `/health` |
 
 ```bash
 cp .env.example .env   # then replace the placeholder passwords and JWT key
@@ -73,17 +82,24 @@ docker compose up --build
 ```
 
 - The API listens on `http://localhost:8080` (`API_PORT` to change it); Scalar is at `/scalar/v1`.
-- The API container only starts once SQL Server answers queries and the emulator's `/health` endpoint
-  returns 200 (checked by the one-shot `servicebus-emulator-ready` container, since the emulator
-  image has no shell to run a healthcheck in).
-- It runs with `Database__MigrateOnStartup=true`, so a fresh database volume gets its schema on first
-  start, and then seeds the `Admin`/`User` roles and the admin from `SEED_ADMIN_EMAIL` /
-  `SEED_ADMIN_PASSWORD`. EF Core takes a database lock while migrating, so concurrent instances are
-  safe. Outside Compose the setting defaults to off, keeping migrations against a real database a
-  deliberate step.
+  The consumer publishes no port; it only has the health endpoints inside the network.
+- Start-up order: `db` healthy, then `migrator` runs to completion, then `api` and `consumer` start
+  (once the emulator's `/health` returns 200). So the tables exist before anything serves traffic,
+  and a failed migration stops the stack instead of crash-looping the API.
+- The API seeds the `Admin`/`User` roles and the admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`
+  in Development. The consumer does not seed and needs no JWT key.
 - The image is a multi-stage build (SDK to publish, `aspnet` runtime to run) that runs as the base
-  image's non-root `app` user and contains only the API project.
+  image's non-root `app` user and contains only the API project. The `migrator` image is a separate
+  target of the same Dockerfile (`runtime-deps` plus the self-contained migration bundle).
+- Starting a process with both `Api__Enabled=false` and `Consumer__Enabled=false` fails at startup.
 - Database data lives in the `db-data` volume; `docker compose down -v` wipes it.
+
+Check the stack with the scripts in `scripts/` (PowerShell; they read the admin login from `.env`):
+
+```powershell
+./scripts/smoke-test.ps1              # starts the stack, checks it, stops the database, tears everything down
+./scripts/e2e-consumer-recovery.ps1   # with the stack running: stop only the consumer, buy, restart it
+```
 
 **Why SQL Server in Docker:** the EF Core provider and all existing migrations target SQL Server, and
 the current search and uniqueness checks rely on its case-insensitive default collation. Switching to
@@ -93,15 +109,15 @@ not the app's database.
 
 ### Local Service Bus emulator only
 
-Order placement publishes to Azure Service Bus, consumed by an in-process background service. To run
-just the emulator (e.g. for `dotnet run` or the integration tests), with `.env` in place:
+Order placement publishes to Azure Service Bus; the consumer role (a background service) processes the
+messages. To run just the emulator (e.g. for `dotnet run` or the integration tests), with `.env` in place:
 
 ```bash
 docker compose up -d servicebus-emulator
 ```
 
 This starts `sql-edge` (the emulator's backing store) and `servicebus-emulator`, pre-configured with a
-session-enabled `order-placed` queue (see `docker/servicebus-emulator/Config.json`). The emulator speaks
+session-enabled `order-placed` queue, plus `order-placed-tests` for the integration tests (see `docker/servicebus-emulator/Config.json`). The emulator speaks
 the real `Azure.Messaging.ServiceBus` protocol, so the app code doesn't know the difference.
 
 ### Health checks
@@ -118,6 +134,7 @@ details, since the endpoints are anonymous).
 
 ```bash
 cd Ecommerce_Backend
+dotnet tool restore   # once: installs the pinned dotnet-ef
 dotnet ef database update
 dotnet run
 ```
@@ -127,6 +144,11 @@ dotnet run
 ```bash
 dotnet test
 ```
+
+The integration tests need the Service Bus emulator running (see above). They use their own
+`order-placed-tests` queue, so a running `api` or `consumer` container never competes with them for
+messages. Without that separation, the container took the tests' messages and the tests' orders stayed
+`Pending`.
 
 The order/checkout tests talk to the real Service Bus emulator on `localhost:5672`, so start it first
 (see above); everything else runs against the EF Core in-memory provider.
