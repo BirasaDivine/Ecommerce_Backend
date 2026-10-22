@@ -7,6 +7,7 @@ var roles = builder.Services.AddAppRoles(builder.Configuration);
 builder.Services.AddAppDatabase(builder.Configuration);
 builder.Services.AddServiceBusMessaging(builder.Configuration, roles);
 builder.Services.AddAppHealthChecks(builder.Configuration);
+builder.Services.AddAppVersion(builder.Configuration);
 
 if (roles.ApiEnabled)
 {
@@ -21,6 +22,7 @@ if (roles.ApiEnabled)
 }
 
 app.MapAppHealthChecks();
+app.MapAppVersion();
 
 app.Run();
 

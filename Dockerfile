@@ -41,6 +41,10 @@ WORKDIR /app
 
 COPY --from=build /app/publish .
 
+# The commit this image was built from; reported by /version (build with --build-arg COMMIT_SHA=<sha>).
+ARG COMMIT_SHA=unknown
+ENV Version__Commit=$COMMIT_SHA
+
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 
