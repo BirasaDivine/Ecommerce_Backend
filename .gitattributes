@@ -2,6 +2,6 @@
 # checkouts (core.autocrlf=true would otherwise give them CRLF).
 Dockerfile text eol=lf
 .dockerignore text eol=lf
-docker-compose*.yml text eol=lf
+compose*.yaml text eol=lf
 .env.example text eol=lf
 docker/** text eol=lf
