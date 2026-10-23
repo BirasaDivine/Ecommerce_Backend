@@ -12,8 +12,9 @@ db_password="Aa1!$(random)"
 servicebus_sql_password="Aa1!$(random)"
 jwt_key="$(random)$(random)"
 admin_password="Aa1!$(random)"
+grafana_password="Aa1!$(random)"
 
-for value in "$db_password" "$servicebus_sql_password" "$jwt_key" "$admin_password"; do
+for value in "$db_password" "$servicebus_sql_password" "$jwt_key" "$admin_password" "$grafana_password"; do
     echo "::add-mask::$value"
 done
 
@@ -22,6 +23,7 @@ sed \
     -e "s|^SERVICEBUS_SQL_PASSWORD=.*|SERVICEBUS_SQL_PASSWORD=$servicebus_sql_password|" \
     -e "s|^JWT_KEY=.*|JWT_KEY=$jwt_key|" \
     -e "s|^SEED_ADMIN_PASSWORD=.*|SEED_ADMIN_PASSWORD=$admin_password|" \
+    -e "s|^GRAFANA_ADMIN_PASSWORD=.*|GRAFANA_ADMIN_PASSWORD=$grafana_password|" \
     .env.example > .env
 
 echo "Wrote .env with run-specific credentials."
