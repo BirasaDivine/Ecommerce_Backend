@@ -18,6 +18,13 @@ x-database-connection: &database-connection
 x-servicebus-connection: &servicebus-connection
   ServiceBus__ConnectionString: ${SERVICEBUS_CONNECTION_STRING:?SERVICEBUS_CONNECTION_STRING must be set in .env}
 
+# Telemetry goes to the OpenTelemetry Collector. The api and consumer do NOT depend on it
+# starting: if it is down they keep working and just drop telemetry.
+x-telemetry: &telemetry
+  Telemetry__Exporter: Otlp
+  Telemetry__OtlpEndpoint: http://otel-collector:4317
+  Telemetry__SamplingRatio: ${OTEL_SAMPLING_RATIO:-1.0}
+
 services:
   # One-off job: applies the EF Core migrations, then exits 0. The api and consumer
   # wait for it to finish successfully, so tables exist before anything serves traffic.
@@ -51,7 +58,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       # The api only takes requests and publishes orders; the consumer service processes them.
       Consumer__Enabled: "false"
-      <<: [*database-connection, *servicebus-connection]
+      <<: [*database-connection, *servicebus-connection, *telemetry]
       Jwt__Key: ${JWT_KEY:?JWT_KEY must be set in .env}
       SeedAdmin__Email: ${SEED_ADMIN_EMAIL:?SEED_ADMIN_EMAIL must be set in .env}
       SeedAdmin__Password: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD must be set in .env}
@@ -73,7 +80,7 @@ services:
     image: ecommerce-backend-api:local
     environment:
       Api__Enabled: "false"
-      <<: [*database-connection, *servicebus-connection]
+      <<: [*database-connection, *servicebus-connection, *telemetry]
     depends_on:
       db:
         condition: service_healthy
@@ -82,6 +89,74 @@ services:
       servicebus-emulator-ready:
         condition: service_completed_successfully
     restart: on-failure:3
+    networks:
+      - backend
+
+  # Receives traces, metrics and logs from the api and consumer (OTLP) and forwards them.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.130.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - "./observability/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro"
+    # Not a hard dependency of the api: only so the Collector starts after its back ends.
+    depends_on:
+      - tempo
+      - loki
+    networks:
+      - backend
+
+  # Stores traces (the Collector forwards them here).
+  tempo:
+    image: grafana/tempo:2.7.2
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - "./observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro"
+    networks:
+      - backend
+
+  # Stores logs (the Collector forwards them to Loki's OTLP endpoint).
+  loki:
+    image: grafana/loki:3.4.2
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - "./observability/loki/loki.yaml:/etc/loki/loki.yaml:ro"
+    networks:
+      - backend
+
+  # Stores metrics (it scrapes the Collector).
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - "./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - otel-collector
+    networks:
+      - backend
+
+  # Dashboards and alerts. Everything it shows is provisioned from observability/grafana; the
+  # login comes from .env.
+  grafana:
+    image: grafana/grafana:11.5.2
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER must be set in .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - "./observability/grafana/provisioning:/etc/grafana/provisioning:ro"
+      - "./observability/grafana/dashboards:/etc/grafana/dashboards:ro"
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
     networks:
       - backend
 
@@ -156,6 +231,7 @@ services:
 
 volumes:
   db-data:
+  grafana-data:
 
 networks:
   backend:

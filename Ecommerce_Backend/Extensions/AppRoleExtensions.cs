@@ -22,7 +22,10 @@ namespace Ecommerce_Backend.Extensions
             services.Configure<ApiOptions>(configuration.GetSection(ApiOptions.Path));
             services.Configure<ConsumerOptions>(configuration.GetSection(ConsumerOptions.Path));
 
-            return new AppRoles(api.Enabled, consumer.Enabled);
+            var roles = new AppRoles(api.Enabled, consumer.Enabled);
+            services.AddSingleton(roles);
+
+            return roles;
         }
     }
 }

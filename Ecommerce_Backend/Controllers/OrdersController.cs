@@ -2,6 +2,7 @@ using Ecommerce_Backend.Data;
 using Ecommerce_Backend.DTOs;
 using Ecommerce_Backend.Messaging;
 using Ecommerce_Backend.Models;
+using Ecommerce_Backend.Telemetry;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -26,11 +27,13 @@ namespace Ecommerce_Backend.Controllers
     {
         private readonly AppDbContext _context;
         private readonly IOrderEventPublisher _publisher;
+        private readonly OrderMetrics _metrics;
 
-        public OrdersController(AppDbContext context, IOrderEventPublisher publisher)
+        public OrdersController(AppDbContext context, IOrderEventPublisher publisher, OrderMetrics metrics)
         {
             _context = context;
             _publisher = publisher;
+            _metrics = metrics;
         }
 
         [HttpPost]
@@ -82,6 +85,8 @@ namespace Ecommerce_Backend.Controllers
                 Sku = variant.Sku,
                 Quantity = request.Quantity
             });
+
+            _metrics.OrderPlaced();
 
             return AcceptedAtAction(nameof(GetOrderById), new { id = order.Id }, ToDto(order, variant.Sku));
         }

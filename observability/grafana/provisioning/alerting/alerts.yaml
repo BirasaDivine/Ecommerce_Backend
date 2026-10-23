@@ -1,0 +1,59 @@
+# Alert rules, provisioned from this file.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: orders
+    folder: Shop
+    interval: 30s
+    rules:
+      - uid: orders-stuck-pending
+        title: Orders stuck Pending for 2 minutes
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: Orders have stayed Pending for more than 2 minutes.
+          description: >-
+            The number of Pending orders did not drop to 0 at any point in the last 2 minutes, so the
+            consumer is probably stopped, stuck or cannot reach the database or Service Bus.
+        data:
+          # A: the lowest Pending count seen in the last 2 minutes (0 means orders are being processed).
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max(min_over_time(orders_pending[2m]))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+          # C: fire when that lowest count is above 0.
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              datasource:
+                type: __expr__
+                uid: __expr__

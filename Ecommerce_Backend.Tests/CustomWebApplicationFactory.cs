@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -17,6 +17,14 @@ namespace Ecommerce_Backend.Tests
 
         // Dedicated queue so a running api/consumer container never competes with the tests for messages.
         private const string TestQueueName = "order-placed-tests";
+
+        static CustomWebApplicationFactory()
+        {
+            // The exporter is chosen while Program builds the host, before in-memory settings apply, so it
+            // comes from the environment. None keeps span and metric output out of the test log; tests that
+            // need spans add their own in-memory exporter.
+            Environment.SetEnvironmentVariable("Telemetry__Exporter", "None");
+        }
 
         private readonly string _databaseName;
         private readonly bool _enableOrderProcessing;
