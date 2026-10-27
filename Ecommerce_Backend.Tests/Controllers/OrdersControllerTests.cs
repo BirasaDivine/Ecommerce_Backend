@@ -1,10 +1,14 @@
+using Azure.Messaging.ServiceBus;
 using Ecommerce_Backend.Data;
 using Ecommerce_Backend.Messaging;
 using Ecommerce_Backend.Models;
+using Ecommerce_Backend.Telemetry;
 using Ecommerce_Backend.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -448,6 +452,72 @@ namespace Ecommerce_Backend.Tests.Controllers
             var confirmed = outcomes.Count(o => o.Status == OrderStatus.Confirmed);
             Assert.That(GetVariant(_factory, variant.Id).Quantity, Is.EqualTo(initialStock - confirmed - 1),
                 "stock dropped only for Confirmed orders (and the sentinel), never for a Cancelled one");
+        }
+
+        [Test]
+        public async Task Consumer_StartedAfterTheOrderWasCancelled_KeepsItCancelledLeavesStockAndCompletesTheMessage()
+        {
+            _client.Dispose();
+            _factory.Dispose();
+
+            var databaseName = "TestDb_" + Guid.NewGuid();
+            var sku = "CT-CANCEL-FIRST-" + Guid.NewGuid();
+
+            // No consumer yet: the order is accepted and its message waits on the queue.
+            using var firstFactory = new CustomWebApplicationFactory(databaseName, enableOrderProcessing: false);
+            using var firstClient = firstFactory.CreateClient();
+            var variant = SeedVariant(firstFactory, quantity: 5, sku: sku);
+            var token = await RegisterAndLoginAsync(firstClient, "cancelfirst@ecommerce.local");
+            firstClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var buy = await firstClient.PostAsJsonAsync("/api/orders", new { VariantId = variant.Id, Quantity = 2 });
+            Assert.That(buy.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
+            var accepted = await buy.Content.ReadFromJsonAsync<OrderResponse>();
+            Assert.That(accepted!.Status, Is.EqualTo(OrderStatus.Pending));
+
+            var cancel = await firstClient.PostAsync($"/api/orders/{accepted.Id}/cancel", null);
+            Assert.That(cancel.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+
+            // The consumer's process span ends after the message is completed (or after an exception).
+            var finished = new ConcurrentQueue<Activity>();
+            using var listener = new ActivityListener
+            {
+                ShouldListenTo = source => source.Name == AppTelemetry.ActivitySource.Name,
+                Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+                ActivityStopped = activity => finished.Enqueue(activity)
+            };
+            ActivitySource.AddActivityListener(listener);
+
+            // Now start the consumer on the same database.
+            using (var secondFactory = new CustomWebApplicationFactory(databaseName))
+            {
+                using var secondClient = secondFactory.CreateClient();
+
+                var deadline = DateTime.UtcNow + PollTimeout;
+                Activity? processed = null;
+                while (DateTime.UtcNow < deadline && processed == null)
+                {
+                    processed = finished.ToArray().FirstOrDefault(a =>
+                        a.DisplayName == "order-placed process" && Equals(a.GetTagItem("order.id"), accepted.Id));
+                    if (processed == null)
+                    {
+                        await Task.Delay(PollInterval);
+                    }
+                }
+
+                Assert.That(processed, Is.Not.Null, "the consumer handled the OrderPlaced message");
+                Assert.That(processed!.Status, Is.Not.EqualTo(ActivityStatusCode.Error), "handling it did not throw");
+                Assert.That(processed.GetTagItem("order.outcome"), Is.EqualTo("skipped"));
+
+                Assert.That(GetOrder(secondFactory, accepted.Id).Status, Is.EqualTo(OrderStatus.Cancelled));
+                Assert.That(GetVariant(secondFactory, variant.Id).Quantity, Is.EqualTo(5), "stock is unchanged");
+            }
+
+            // Completed means gone: nothing is left in this SKU's session, so it will not be redelivered.
+            await using var serviceBus = new ServiceBusClient(CustomWebApplicationFactory.EmulatorConnectionString);
+            await using var receiver = await serviceBus.AcceptSessionAsync(CustomWebApplicationFactory.TestQueueName, sku);
+            var leftover = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(3));
+            Assert.That(leftover, Is.Null, "the message was completed, not abandoned");
         }
 
         [Test]

@@ -12,11 +12,11 @@ namespace Ecommerce_Backend.Tests
 {
     public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     {
-        private const string EmulatorConnectionString =
+        internal const string EmulatorConnectionString =
             "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
 
         // Dedicated queue so a running api/consumer container never competes with the tests for messages.
-        private const string TestQueueName = "order-placed-tests";
+        internal const string TestQueueName = "order-placed-tests";
 
         static CustomWebApplicationFactory()
         {
