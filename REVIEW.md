@@ -2,7 +2,7 @@
 
 Branch `feature/order-cancellation`, compared against the feature requirements, the testing requirements and the rules in `CLAUDE.md`.
 
-The testing requirements were not supplied with the review request, so the tests are graded against the behaviours in the feature requirements. Add rows here once they are available.
+The testing requirements were supplied after the first version of this review; they are graded in their own table below.
 
 ## Feature requirements
 
@@ -35,9 +35,21 @@ The testing requirements were not supplied with the review request, so the tests
 | 20 | Only order tests use the emulator; everything else uses InMemory | Met | `OrderConcurrencyTests.cs` uses InMemory only; the other new tests are order or telemetry tests that already use the emulator factory |
 | 21 | Docs avoid em dashes | Met (fixed in `6517074`) | The em dashes at `README.md:20-22,35` are replaced; a search of `README.md`, `CLAUDE.md`, `docs/` and `scripts/` finds none |
 
+## Testing requirements
+
+All tests from the earlier stages still pass (126 tests, 0 failures).
+
+| # | Requirement | Verdict | Evidence |
+|---|---|---|---|
+| 22 | Cancel, positive: cancelling a `Pending` order returns `200` and the order becomes `Cancelled` | Met | `OrdersControllerTests.cs:317` (also checks `GET` and unchanged stock) |
+| 23 | Cancel, negative: cancelling a `Confirmed` order returns `409` | Met | `OrdersControllerTests.cs:372` (`TestCase` for Confirmed, also Rejected and Cancelled) |
+| 24 | Cancel, negative: cancelling another user's order returns `404` | Met | `OrdersControllerTests.cs:355` (also checks the order stays `Pending`) |
+| 25 | Consumer skips cancelled orders: place an order, cancel it before the consumer runs, then start the consumer; the order stays `Cancelled`, stock is unchanged, the message is completed | Met (fixed in `e193dc9`) | `OrdersControllerTests.cs:458`. It buys through the API with no consumer, cancels through the API, then starts a consumer on the same database. It asserts the `order-placed process` span ended without an error and is tagged `skipped`, the order is `Cancelled`, stock is 5, and the SKU's session queue is empty. The earlier test, which seeded a cancelled order directly, did not cover "completed". Checked by removing the `CompleteMessageAsync` call: the test failed with the message still on the queue |
+| 26 | Concurrency, negative: two `DbContext` instances, one confirming and one cancelling; the second save fails with a concurrency conflict and the order keeps the first outcome | Met | `OrderConcurrencyTests.cs:12` (`Assert.Throws<DbUpdateConcurrencyException>` at `:37`, status still `Confirmed` at `:40`) |
+
 ## Open items
 
 - No row is partly met or missing now. Rows 7, 11 and 21 are fixed; the commits are noted in the tables.
 - Row 6 is graded Met, but its test does not assert the skip log line.
 - `scripts/e2e-cancel-race.ps1` is timing dependent: it warns, and does not fail, if one side never won.
-- The testing requirements were never supplied, so no rows exist for them.
+- Row 6 and row 25 overlap on purpose: row 6 is the requirement, row 25 is the stricter end-to-end test of it.
