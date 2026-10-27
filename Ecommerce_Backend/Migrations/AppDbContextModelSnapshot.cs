@@ -163,6 +163,7 @@ namespace Ecommerce_Backend.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("Status")
+                        .IsConcurrencyToken()
                         .HasColumnType("int");
 
                     b.Property<decimal>("UnitPrice")
