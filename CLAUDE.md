@@ -20,7 +20,7 @@ dotnet ef migrations has-pending-model-changes   # CI fails if the model changed
 ## Structure
 
 - One image, two roles: `AppRoles` (`Api:Enabled`, `Consumer:Enabled`) picks what is registered. The `api` service serves HTTP; the `consumer` service runs the same image with `Api__Enabled=false`. Service registration is in `Extensions/*Extensions.cs`; config sections are validated options classes in `Configuration/`.
-- Purchase flow: `POST /api/orders` saves the order as `Pending`, publishes `OrderPlaced` (with W3C `traceparent`) to a session-enabled Service Bus queue and returns `202`. `Messaging/OrderProcessingService` in the consumer checks stock and sets `Confirmed` or `Rejected`. One purchase is one trace across both services.
+- Purchase flow: `POST /api/orders` saves the order as `Pending`, publishes `OrderPlaced` (with W3C `traceparent`) to a session-enabled Service Bus queue and returns `202`. `Messaging/OrderProcessingService` in the consumer checks stock and sets `Confirmed` or `Rejected`. One purchase is one trace across both services. `POST /api/orders/{id}/cancel` sets a `Pending` order to `Cancelled`; `Order.Status` is a concurrency token so the cancel and the consumer cannot both resolve one order (the loser gets `409` or skips the message).
 - Tests: only order/checkout tests use the real Service Bus emulator (own `order-placed-tests` queue); everything else uses EF InMemory.
 
 ## Conventions
