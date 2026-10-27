@@ -17,9 +17,9 @@ An ASP.NET Core Web API for an e-commerce inventory and order management platfor
 
 ## Roles
 
-- **Admin** — manages categories, products, variants, and collections.
-- **User** — any authenticated account; can purchase products.
-- **Public (unauthenticated)** — can browse and search products only.
+- **Admin**: manages categories, products, variants, and collections.
+- **User**: any authenticated account; can purchase products.
+- **Public (unauthenticated)**: can browse and search products only.
 
 ## Getting started
 
@@ -32,7 +32,7 @@ An ASP.NET Core Web API for an e-commerce inventory and order management platfor
 
 `appsettings.json` holds the connection string (`Database:ConnectionString`) and non-secret JWT settings (`Issuer`, `Audience`,
 `ExpiryMinutes`). `appsettings.Development.json` ships a placeholder `Jwt:Key` for local development
-only — it must not be reused anywhere else. For a real environment, override it with user secrets
+only. It must not be reused anywhere else. For a real environment, override it with user secrets
 or an environment variable instead of committing a key:
 
 ```bash
