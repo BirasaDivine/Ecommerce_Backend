@@ -1,4 +1,5 @@
 using Ecommerce_Backend.Data;
+using Ecommerce_Backend.Messaging;
 using Ecommerce_Backend.Models;
 using Ecommerce_Backend.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -105,6 +106,46 @@ namespace Ecommerce_Backend.Tests.Controllers
             }
 
             throw new TimeoutException($"Order {orderId} did not resolve within {effectiveTimeout}.");
+        }
+
+        // Inserted directly, without publishing a message, so the consumer cannot resolve it behind the test's back.
+        private static Order SeedOrder(CustomWebApplicationFactory factory, string buyerEmail, int variantId, OrderStatus status, int quantity = 1)
+        {
+            using var scope = factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var order = new Order
+            {
+                ApplicationUserId = context.Users.Single(u => u.Email == buyerEmail).Id,
+                VariantId = variantId,
+                Quantity = quantity,
+                UnitPrice = 100,
+                OrderDate = DateTime.UtcNow,
+                Status = status
+            };
+            context.Orders.Add(order);
+            context.SaveChanges();
+            return order;
+        }
+
+        private static Order GetOrder(CustomWebApplicationFactory factory, int orderId)
+        {
+            using var scope = factory.Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            return context.Orders.AsNoTracking().First(o => o.Id == orderId);
+        }
+
+        private Task<HttpResponseMessage> CancelAsync(int orderId) => _client.PostAsync($"/api/orders/{orderId}/cancel", null);
+
+        private static Task PublishOrderPlacedAsync(CustomWebApplicationFactory factory, Order order, string sku)
+        {
+            return factory.Services.GetRequiredService<IOrderEventPublisher>().PublishOrderPlacedAsync(new OrderPlacedMessage
+            {
+                OrderId = order.Id,
+                VariantId = order.VariantId,
+                Sku = sku,
+                Quantity = order.Quantity
+            });
         }
 
         private static Variant GetVariant(CustomWebApplicationFactory factory, int variantId)
@@ -266,6 +307,147 @@ namespace Ecommerce_Backend.Tests.Controllers
 
             var updatedVariant = GetVariant(_factory, variant.Id);
             Assert.That(updatedVariant.Quantity, Is.EqualTo(0));
+        }
+
+        [Test]
+        public async Task Cancel_OwnPendingOrder_Returns200AndOrderBecomesCancelled()
+        {
+            var variant = SeedVariant(quantity: 10);
+            var token = await RegisterAndLoginAsync("buyer@ecommerce.local");
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var order = SeedOrder(_factory, "buyer@ecommerce.local", variant.Id, OrderStatus.Pending);
+
+            var response = await CancelAsync(order.Id);
+            var cancelled = await response.Content.ReadFromJsonAsync<OrderResponse>();
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(cancelled!.Status, Is.EqualTo(OrderStatus.Cancelled));
+
+            var fetched = await _client.GetFromJsonAsync<OrderResponse>($"/api/orders/{order.Id}");
+            Assert.That(fetched!.Status, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(GetVariant(_factory, variant.Id).Quantity, Is.EqualTo(10));
+        }
+
+        [Test]
+        public async Task Cancel_WithoutAuth_Returns401()
+        {
+            var response = await CancelAsync(1);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        }
+
+        [Test]
+        public async Task Cancel_UnknownOrder_Returns404()
+        {
+            var token = await RegisterAndLoginAsync("buyer@ecommerce.local");
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var response = await CancelAsync(9999);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+        }
+
+        [Test]
+        public async Task Cancel_AnotherUsersOrder_Returns404AndLeavesOrderPending()
+        {
+            var variant = SeedVariant(quantity: 10);
+            await RegisterAndLoginAsync("buyer@ecommerce.local");
+            var otherToken = await RegisterAndLoginAsync("other@ecommerce.local");
+            var order = SeedOrder(_factory, "buyer@ecommerce.local", variant.Id, OrderStatus.Pending);
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", otherToken);
+
+            var response = await CancelAsync(order.Id);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+            Assert.That(GetOrder(_factory, order.Id).Status, Is.EqualTo(OrderStatus.Pending));
+        }
+
+        [TestCase(OrderStatus.Confirmed)]
+        [TestCase(OrderStatus.Rejected)]
+        [TestCase(OrderStatus.Cancelled)]
+        public async Task Cancel_OrderThatIsNoLongerPending_Returns409AndKeepsItsStatus(OrderStatus status)
+        {
+            var variant = SeedVariant(quantity: 10);
+            var token = await RegisterAndLoginAsync("buyer@ecommerce.local");
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var order = SeedOrder(_factory, "buyer@ecommerce.local", variant.Id, status);
+
+            var response = await CancelAsync(order.Id);
+
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+            Assert.That(GetOrder(_factory, order.Id).Status, Is.EqualTo(status));
+        }
+
+        [Test]
+        public async Task Consumer_CancelledOrderMessage_IsSkippedAndStockIsUntouched()
+        {
+            const string sku = "CT-CANCELLED";
+            var variant = SeedVariant(quantity: 10, sku: sku);
+            var token = await RegisterAndLoginAsync("buyer@ecommerce.local");
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var cancelled = SeedOrder(_factory, "buyer@ecommerce.local", variant.Id, OrderStatus.Cancelled, quantity: 4);
+            await PublishOrderPlacedAsync(_factory, cancelled, sku);
+
+            // Messages of one session (SKU) are handled in order, so once this later order is resolved the
+            // cancelled order's message has been handled too.
+            var response = await _client.PostAsJsonAsync("/api/orders", new { VariantId = variant.Id, Quantity = 1 });
+            var later = await response.Content.ReadFromJsonAsync<OrderResponse>();
+            var resolved = await PollUntilResolvedAsync(_client, later!.Id);
+
+            Assert.That(resolved.Status, Is.EqualTo(OrderStatus.Confirmed));
+            Assert.That(GetOrder(_factory, cancelled.Id).Status, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(GetVariant(_factory, variant.Id).Quantity, Is.EqualTo(9), "only the later order took stock");
+        }
+
+        [Test]
+        public async Task CancelRacingTheConsumer_ExactlyOneWinsAndStockMatches()
+        {
+            const string sku = "CT-RACE";
+            const int initialStock = 100;
+            const int rounds = 20;
+
+            var variant = SeedVariant(quantity: initialStock, sku: sku);
+            var token = await RegisterAndLoginAsync("buyer@ecommerce.local");
+            _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var outcomes = new List<(int OrderId, OrderStatus Status)>();
+            for (var i = 0; i < rounds; i++)
+            {
+                var order = SeedOrder(_factory, "buyer@ecommerce.local", variant.Id, OrderStatus.Pending);
+
+                var publish = PublishOrderPlacedAsync(_factory, order, sku);
+                var cancel = CancelAsync(order.Id);
+                await Task.WhenAll(publish, cancel);
+
+                var response = await cancel;
+                var current = GetOrder(_factory, order.Id);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    Assert.That(current.Status, Is.EqualTo(OrderStatus.Cancelled), $"round {i}: cancel won");
+                }
+                else
+                {
+                    Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Conflict), $"round {i}");
+                    Assert.That(current.Status, Is.EqualTo(OrderStatus.Confirmed), $"round {i}: consumer won");
+                }
+
+                outcomes.Add((order.Id, current.Status));
+            }
+
+            // A real order for the same SKU: once it is resolved every earlier message has been handled.
+            var sentinelResponse = await _client.PostAsJsonAsync("/api/orders", new { VariantId = variant.Id, Quantity = 1 });
+            var sentinel = await sentinelResponse.Content.ReadFromJsonAsync<OrderResponse>();
+            await PollUntilResolvedAsync(_client, sentinel!.Id);
+
+            foreach (var (orderId, status) in outcomes)
+            {
+                Assert.That(GetOrder(_factory, orderId).Status, Is.EqualTo(status), $"order {orderId} kept its outcome");
+            }
+
+            var confirmed = outcomes.Count(o => o.Status == OrderStatus.Confirmed);
+            Assert.That(GetVariant(_factory, variant.Id).Quantity, Is.EqualTo(initialStock - confirmed - 1),
+                "stock dropped only for Confirmed orders (and the sentinel), never for a Cancelled one");
         }
 
         [Test]
