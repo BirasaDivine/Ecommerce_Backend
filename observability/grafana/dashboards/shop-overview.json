@@ -197,8 +197,8 @@
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Confirmed vs rejected orders",
-      "description": "Orders resolved per minute, by outcome.",
+      "title": "Confirmed vs rejected vs cancelled orders",
+      "description": "Orders resolved per minute, by outcome: confirmed, rejected (out of stock) or cancelled by the buyer.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
