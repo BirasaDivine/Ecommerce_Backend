@@ -248,7 +248,7 @@ docker compose ps -a   # db (healthy), migrator and servicebus-emulator-ready Ex
 
 The same recovery behaviour is also covered by the integration test `ConsumerRecovery_PendingOrdersResolveExactlyOnceAfterProcessorRestart` in `OrdersControllerTests.cs`.
 
-> Status values in JSON are numbers: `0` Pending, `1` Confirmed, `2` Rejected. That serialization predates this branch.
+> Status values in JSON are numbers: `0` Pending, `1` Confirmed, `2` Rejected, `3` Cancelled. That serialization predates this branch.
 
 ---
 

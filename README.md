@@ -204,9 +204,14 @@ provisioned from files in `observability/grafana/`, so nothing has to be configu
    product as the admin, then `POST /api/orders` with `{ "variantId": 1, "quantity": 1 }` and a Bearer token.
    It answers `202 Accepted` with the order in `Pending`; poll `GET /api/orders/{id}` until it is `Confirmed`
    (status `1`) or `Rejected` (`2`).
+
+   While an order is still `Pending`, its owner can cancel it with `POST /api/orders/{id}/cancel`: `200` with the
+   order in `Cancelled` (status `3`), `404` if it does not exist or belongs to someone else, `409` if it is no
+   longer `Pending`. A cancellation and the consumer can reach the same order at the same moment; `Order.Status`
+   is an EF Core concurrency token, so exactly one wins and a cancelled order never has its stock decremented.
 3. Within about a minute, open Grafana and sign in:
    - **Metrics and dashboard:** Dashboards, folder Shop, **Shop overview**. It shows request rate, 5xx rate and
-     p95 latency per endpoint, confirmed versus rejected orders, p95 order processing time and the number of
+     p95 latency per endpoint, confirmed versus rejected versus cancelled orders, p95 order processing time and the number of
      orders currently Pending.
    - **Trace:** Explore, choose the **Tempo** data source, query type TraceQL, run
      `{ resource.service.name = "inventory-api" && name = "POST api/Orders" }` and open a result. One trace
@@ -221,7 +226,7 @@ provisioned from files in `observability/grafana/`, so nothing has to be configu
 | Signal | What |
 |---|---|
 | Traces | Every HTTP request (health checks excluded), EF Core queries (SQL text, never parameter values), the publish of the `OrderPlaced` message, the consumer's processing and its `order.stock-check` span (attributes `order.id`, `variant.sku`, `order.outcome`) |
-| Metrics | HTTP request count, duration and errors per route; .NET runtime (memory, GC, thread pool); `orders.placed`, `orders.processed` (tags `outcome`, `reason`), `orders.processing.duration` (ms, Pending to final status), `orders.pending` |
+| Metrics | HTTP request count, duration and errors per route; .NET runtime (memory, GC, thread pool); `orders.placed`, `orders.processed` (tags `outcome` = `confirmed`, `rejected` or `cancelled`, and `reason`), `orders.processing.duration` (ms, Pending to final status), `orders.pending` |
 | Logs | Everything written through `ILogger` (message templates), each with the trace id and span id of the work it was written in |
 | Resource attributes | `service.name` (`inventory-api` or `order-consumer`), `service.version` (the commit SHA from the build), `deployment.environment` on every signal |
 

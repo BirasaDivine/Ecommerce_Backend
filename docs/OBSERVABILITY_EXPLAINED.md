@@ -63,7 +63,7 @@ Both end up with the same trace id. This was implemented explicitly with .NET's 
 
 ### Custom spans and metrics
 - Span `order.stock-check` around the stock check and decrement, with attributes `order.id`, `variant.sku` and `order.outcome`. No emails, names or tokens anywhere.
-- Metrics (`Telemetry/OrderMetrics.cs`): `orders.placed`, `orders.processed` (tagged `outcome` and, for rejections, `reason`), `orders.processing.duration` (milliseconds from Pending to final status) and `orders.pending` (a gauge: how many orders are Pending right now). Tags are **low-cardinality** on purpose: each distinct tag value creates a separate time series, so an order id or SKU as a tag would create millions of them.
+- Metrics (`Telemetry/OrderMetrics.cs`): `orders.placed`, `orders.processed` (tagged `outcome`, which is `confirmed`, `rejected` or `cancelled`, and, for rejections, `reason`), `orders.processing.duration` (milliseconds from Pending to final status) and `orders.pending` (a gauge: how many orders are Pending right now). Tags are **low-cardinality** on purpose: each distinct tag value creates a separate time series, so an order id or SKU as a tag would create millions of them.
 - The Pending gauge is reported by the **API**, not the consumer. If it came from the consumer, it would vanish exactly when the consumer is down, which is when Pending orders pile up.
 
 ### Logs
@@ -75,7 +75,7 @@ Keeping every trace is fine locally but expensive at scale. `Telemetry:SamplingR
 ### Grafana, provisioned from files
 Under `observability/grafana/`:
 - **Data sources** for Prometheus, Tempo and Loki, including two links: from a Loki log line to its trace in Tempo (using the stored `trace_id`), and from a Tempo trace to its logs.
-- **One dashboard**, "Shop overview": request rate, 5xx error rate and 95th percentile latency per endpoint; confirmed vs rejected orders; 95th percentile order processing time; Pending orders now.
+- **One dashboard**, "Shop overview": request rate, 5xx error rate and 95th percentile latency per endpoint; confirmed vs rejected vs cancelled orders; 95th percentile order processing time; Pending orders now.
 - **One alert**: orders stuck Pending for 2 minutes (the reasoning is in the README).
 
 Nothing is clicked together in the UI, so a fresh clone gets the same Grafana every time. The login comes from `.env`.
