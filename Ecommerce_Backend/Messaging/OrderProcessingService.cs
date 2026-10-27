@@ -104,7 +104,7 @@ namespace Ecommerce_Backend.Messaging
             if (order == null || order.Status != OrderStatus.Pending)
             {
                 processActivity?.SetTag("order.outcome", "skipped");
-                _logger.LogInformation("Order {OrderId} skipped: not found or already processed.", message.OrderId);
+                _logger.LogInformation("Order {OrderId} skipped: not found or already {Status}.", message.OrderId, order?.Status);
                 await args.CompleteMessageAsync(args.Message);
                 return;
             }
@@ -120,21 +120,27 @@ namespace Ecommerce_Backend.Messaging
 
                 order.Status = OrderStatus.Rejected;
                 order.RejectionReason = "Insufficient stock";
-                await context.SaveChangesAsync();
+                if (!await TrySaveAsync(context, order, args, processActivity))
+                {
+                    return;
+                }
 
                 stockCheck?.SetTag("order.outcome", OrderMetrics.RejectedOutcome);
                 stockCheck?.SetTag("order.rejection_reason", reason);
                 processActivity?.SetTag("order.outcome", OrderMetrics.RejectedOutcome);
                 _metrics.OrderRejected(reason, order.OrderDate);
 
-                _logger.LogInformation("Order {OrderId} rejected: insufficient stock.", order.Id);
+                _logger.LogInformation("Order {OrderId} rejected: {Reason}.", order.Id, reason);
                 await args.CompleteMessageAsync(args.Message);
                 return;
             }
 
             variant.Quantity -= message.Quantity;
             order.Status = OrderStatus.Confirmed;
-            await context.SaveChangesAsync();
+            if (!await TrySaveAsync(context, order, args, processActivity))
+            {
+                return;
+            }
 
             stockCheck?.SetTag("order.outcome", OrderMetrics.ConfirmedOutcome);
             processActivity?.SetTag("order.outcome", OrderMetrics.ConfirmedOutcome);
@@ -142,6 +148,35 @@ namespace Ecommerce_Backend.Messaging
 
             _logger.LogInformation("Order {OrderId} confirmed.", order.Id);
             await args.CompleteMessageAsync(args.Message);
+        }
+
+        // Saves the order (and any stock change in the same transaction). Returns false when the buyer
+        // cancelled the order after we read it: nothing was written, so the stock is untouched, and the
+        // message is completed. Any other concurrency failure is rethrown so Service Bus retries it.
+        private async Task<bool> TrySaveAsync(
+            AppDbContext context, Order order, ProcessSessionMessageEventArgs args, Activity? processActivity)
+        {
+            try
+            {
+                await context.SaveChangesAsync();
+                return true;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                var current = await context.Orders.AsNoTracking()
+                    .Where(o => o.Id == order.Id)
+                    .Select(o => (OrderStatus?)o.Status)
+                    .FirstOrDefaultAsync();
+                if (current != OrderStatus.Cancelled)
+                {
+                    throw;
+                }
+
+                processActivity?.SetTag("order.outcome", "skipped");
+                _logger.LogInformation("Order {OrderId} skipped: cancelled while being processed.", order.Id);
+                await args.CompleteMessageAsync(args.Message);
+                return false;
+            }
         }
 
         private Task ProcessErrorAsync(ProcessErrorEventArgs args)
