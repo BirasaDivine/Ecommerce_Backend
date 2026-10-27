@@ -112,6 +112,47 @@ namespace Ecommerce_Backend.Controllers
             return Ok(ToDto(order, order.Variant?.Sku ?? string.Empty));
         }
 
+        [HttpPost("{id}/cancel")]
+        public async Task<IActionResult> Cancel(int id)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == null)
+            {
+                return Unauthorized();
+            }
+
+            // Another user's order is reported as missing, so its existence is not revealed.
+            var order = await _context.Orders
+                .Include(o => o.Variant)
+                .FirstOrDefaultAsync(o => o.Id == id && o.ApplicationUserId == userId);
+
+            if (order == null)
+            {
+                return NotFound();
+            }
+
+            const string notPending = "Only a Pending order can be cancelled.";
+            if (order.Status != OrderStatus.Pending)
+            {
+                return Conflict(notPending);
+            }
+
+            order.Status = OrderStatus.Cancelled;
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // The consumer resolved the order first.
+                return Conflict(notPending);
+            }
+
+            _metrics.OrderCancelled(order.OrderDate);
+
+            return Ok(ToDto(order, order.Variant?.Sku ?? string.Empty));
+        }
+
         private string? GetCurrentUserId()
         {
             return User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
