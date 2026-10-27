@@ -198,6 +198,7 @@ provisioned from files in `observability/grafana/`, so nothing has to be configu
    ```powershell
    ./scripts/e2e-consumer-recovery.ps1   # a handful of purchases
    ./scripts/load-test.ps1               # 6 in stock, 20 purchases at once: 6 Confirmed, 14 Rejected
+   ./scripts/e2e-cancel-race.ps1         # cancel racing the consumer on real SQL Server: one winner, stock matches
    ```
 
    Or by hand: register and log in at `/api/auth/register` and `/api/auth/login`, create a category and a
