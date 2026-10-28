@@ -1,0 +1,54 @@
+# OpenTelemetry Collector: the single place the app sends telemetry to.
+# The app never talks to a storage back end directly; the Collector decides where each signal goes:
+#   traces  -> Tempo
+#   logs    -> Loki
+#   metrics -> exposed on :8889 for Prometheus to scrape
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Refuse data instead of running out of memory if a back end is slow.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+  batch: {}
+
+exporters:
+  # Prints a summary of what the Collector receives; handy to check all three signals arrive.
+  debug:
+    verbosity: basic
+
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # Turns service.name, service.version and deployment.environment into metric labels.
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug, otlp/tempo]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug, prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug, otlphttp/loki]
