@@ -194,6 +194,82 @@ namespace Ecommerce_Backend.Tests.Telemetry
         }
 
         [Test]
+        public async Task CancelledOrder_RecordsCancelledOutcomeAndLeavesThePendingCount()
+        {
+            var processed = new ConcurrentQueue<(string? Outcome, string? Reason)>();
+            var durations = new ConcurrentQueue<string?>();
+            var pending = new ConcurrentQueue<long>();
+
+            using var listener = new MeterListener();
+            listener.InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (instrument.Meter.Name == "Ecommerce_Backend")
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            };
+            listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+            {
+                if (instrument.Name == OrderMetrics.OrdersProcessedName)
+                {
+                    string? outcome = null, reason = null;
+                    foreach (var tag in tags)
+                    {
+                        if (tag.Key == "outcome") outcome = tag.Value?.ToString();
+                        if (tag.Key == "reason") reason = tag.Value?.ToString();
+                    }
+                    processed.Enqueue((outcome, reason));
+                }
+                else if (instrument.Name == OrderMetrics.OrdersPendingName)
+                {
+                    pending.Enqueue(value);
+                }
+            });
+            listener.SetMeasurementEventCallback<double>((instrument, _, tags, _) =>
+            {
+                if (instrument.Name == OrderMetrics.ProcessingDurationName)
+                {
+                    durations.Enqueue(tags.ToArray().Single(t => t.Key == "outcome").Value?.ToString());
+                }
+            });
+            listener.Start();
+
+            using var app = StartApp(new ThreadSafeActivities());
+            var variant = SeedVariant(app.Factory.Services, quantity: 5, sku: "CANCEL-1");
+            await AuthenticateAsync(app.Client);
+
+            // Inserted directly so the consumer never sees it.
+            int orderId;
+            using (var scope = app.Factory.Services.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var order = new Order
+                {
+                    ApplicationUserId = context.Users.Single(u => u.Email == "telemetry-buyer@example.test").Id,
+                    VariantId = variant.Id,
+                    Quantity = 1,
+                    UnitPrice = 100,
+                    OrderDate = DateTime.UtcNow,
+                    Status = OrderStatus.Pending
+                };
+                context.Orders.Add(order);
+                context.SaveChanges();
+                orderId = order.Id;
+            }
+
+            listener.RecordObservableInstruments();
+            Assert.That(pending.Last(), Is.EqualTo(1), "the order counts as Pending before it is cancelled");
+
+            var response = await app.Client.PostAsync($"/api/orders/{orderId}/cancel", null);
+            response.EnsureSuccessStatusCode();
+
+            listener.RecordObservableInstruments();
+            Assert.That(pending.Last(), Is.EqualTo(0), "a cancelled order no longer counts as Pending");
+            Assert.That(processed.ToArray(), Is.EquivalentTo(new (string?, string?)[] { ("cancelled", null) }));
+            Assert.That(durations.ToArray(), Is.EquivalentTo(new[] { "cancelled" }));
+        }
+
+        [Test]
         public async Task ProcessedOrders_RecordOneConfirmedAndOneRejectedWithTheReason()
         {
             var processed = new ConcurrentQueue<(string? Outcome, string? Reason)>();

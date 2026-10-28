@@ -27,6 +27,13 @@ namespace Ecommerce_Backend.Data
                 .Property(v => v.Quantity)
                 .IsConcurrencyToken();
 
+            // Status is a concurrency token so a cancellation and the consumer cannot both
+            // resolve the same Pending order: the loser's UPDATE matches no row and throws
+            // DbUpdateConcurrencyException (and the consumer's stock decrement rolls back with it).
+            modelBuilder.Entity<Order>()
+                .Property(o => o.Status)
+                .IsConcurrencyToken();
+
             // Backstop for ValidateSkuUniqueness below: that check runs before the
             // insert, so it can't catch two concurrent requests racing past it at
             // the same time. The DB constraint is what actually stops that.

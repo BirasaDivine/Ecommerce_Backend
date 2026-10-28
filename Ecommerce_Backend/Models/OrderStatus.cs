@@ -4,6 +4,7 @@ namespace Ecommerce_Backend.Models
     {
         Pending,
         Confirmed,
-        Rejected
+        Rejected,
+        Cancelled
     }
 }

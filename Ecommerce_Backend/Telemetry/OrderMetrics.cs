@@ -23,6 +23,7 @@ namespace Ecommerce_Backend.Telemetry
 
         public const string ConfirmedOutcome = "confirmed";
         public const string RejectedOutcome = "rejected";
+        public const string CancelledOutcome = "cancelled";
 
         private readonly Meter _meter = new(TelemetryNames.MeterName);
         private readonly Counter<long> _placed;
@@ -37,7 +38,7 @@ namespace Ecommerce_Backend.Telemetry
             _placed = _meter.CreateCounter<long>(OrdersPlacedName, unit: "{order}",
                 description: "Orders accepted by the API.");
             _processed = _meter.CreateCounter<long>(OrdersProcessedName, unit: "{order}",
-                description: "Orders resolved by the consumer, by outcome and rejection reason.");
+                description: "Orders resolved by the consumer or cancelled by the buyer, by outcome and rejection reason.");
             _processingDuration = _meter.CreateHistogram<double>(ProcessingDurationName, unit: "ms",
                 description: "Time from an order being placed (Pending) to its final status.");
 
@@ -64,6 +65,12 @@ namespace Ecommerce_Backend.Telemetry
                 new KeyValuePair<string, object?>("outcome", RejectedOutcome),
                 new KeyValuePair<string, object?>("reason", reason));
             RecordDuration(RejectedOutcome, orderDateUtc);
+        }
+
+        public void OrderCancelled(DateTime orderDateUtc)
+        {
+            _processed.Add(1, new KeyValuePair<string, object?>("outcome", CancelledOutcome));
+            RecordDuration(CancelledOutcome, orderDateUtc);
         }
 
         private void RecordDuration(string outcome, DateTime orderDateUtc)

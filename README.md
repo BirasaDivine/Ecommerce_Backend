@@ -17,9 +17,9 @@ An ASP.NET Core Web API for an e-commerce inventory and order management platfor
 
 ## Roles
 
-- **Admin** — manages categories, products, variants, and collections.
-- **User** — any authenticated account; can purchase products.
-- **Public (unauthenticated)** — can browse and search products only.
+- **Admin**: manages categories, products, variants, and collections.
+- **User**: any authenticated account; can purchase products.
+- **Public (unauthenticated)**: can browse and search products only.
 
 ## Getting started
 
@@ -32,7 +32,7 @@ An ASP.NET Core Web API for an e-commerce inventory and order management platfor
 
 `appsettings.json` holds the connection string (`Database:ConnectionString`) and non-secret JWT settings (`Issuer`, `Audience`,
 `ExpiryMinutes`). `appsettings.Development.json` ships a placeholder `Jwt:Key` for local development
-only — it must not be reused anywhere else. For a real environment, override it with user secrets
+only. It must not be reused anywhere else. For a real environment, override it with user secrets
 or an environment variable instead of committing a key:
 
 ```bash
@@ -138,6 +138,56 @@ the real `Azure.Messaging.ServiceBus` protocol, so the app code doesn't know the
 Both return `200` when healthy and `503` otherwise, with a JSON status per check (no exception
 details, since the endpoints are anonymous).
 
+## Orders API
+
+All order endpoints need a Bearer token (`POST /api/auth/login`).
+
+| Endpoint | Purpose | Responses |
+|---|---|---|
+| `POST /api/orders` | Buy a variant: `{ "variantId": 1, "quantity": 1 }` | `202` with the order in `Pending`, `400` invalid quantity or inactive variant, `404` unknown variant |
+| `GET /api/orders/{id}` | Read an order and its status | `200`, `403` if it belongs to someone else (an Admin may read any order), `404` |
+| `POST /api/orders/{id}/cancel` | Cancel your own order while it is `Pending` | `200` with the updated order, `404`, `409` |
+
+Order status is returned as a number:
+
+| Value | Status | Meaning |
+|---|---|---|
+| `0` | `Pending` | Accepted, waiting for the consumer |
+| `1` | `Confirmed` | Stock was available and has been decremented |
+| `2` | `Rejected` | Not enough stock |
+| `3` | `Cancelled` | Cancelled by its owner while `Pending`. Final |
+
+### Cancelling an order
+
+```bash
+curl -X POST http://localhost:8080/api/orders/42/cancel -H "Authorization: Bearer $TOKEN"
+```
+
+| Result | When |
+|---|---|
+| `200 OK` | The order was `Pending`. The body is the order with `status` `3`. |
+| `404 Not Found` | The order does not exist, or it belongs to another user. Both look the same on purpose, so an order's existence is not revealed. This applies to Admins too: only the owner can cancel. |
+| `409 Conflict` | The order is no longer `Pending` (`Confirmed`, `Rejected` or already `Cancelled`), or the consumer resolved it at the same moment. |
+| `401 Unauthorized` | No valid token. |
+
+A cancelled order never touches stock. A `Pending` order has not taken any stock yet, so there is nothing to
+give back. The `OrderPlaced` message stays on the queue; when the consumer receives it for a cancelled order
+it logs `skipped: not found or already Cancelled`, leaves the stock alone and completes the message.
+
+**Cancel and consumer at the same moment.** Both can reach the same `Pending` order at once. `Order.Status` is
+an EF Core concurrency token, so the database update of the loser matches no row and fails with a concurrency
+conflict. Exactly one of two outcomes happens:
+
+- the consumer wins: the order is `Confirmed` (or `Rejected`) and the cancel gets `409`;
+- the cancel wins: the order is `Cancelled`, the consumer skips it and the stock is unchanged.
+
+The consumer saves the order and the stock decrement in one transaction, so an order can never end `Cancelled`
+with its stock decremented. If the cancel lands between the consumer's read and its save, the consumer logs
+`skipped: cancelled while being processed`.
+
+Each cancellation is counted in `orders.processed` with `outcome="cancelled"`, cancelled orders no longer
+count in `orders.pending`, and the Shop overview panel shows confirmed, rejected and cancelled orders.
+
 ## Observability
 
 One `docker compose up` starts the shop and a complete observability stack, all local. No hosted service
@@ -198,15 +248,21 @@ provisioned from files in `observability/grafana/`, so nothing has to be configu
    ```powershell
    ./scripts/e2e-consumer-recovery.ps1   # a handful of purchases
    ./scripts/load-test.ps1               # 6 in stock, 20 purchases at once: 6 Confirmed, 14 Rejected
+   ./scripts/e2e-cancel-race.ps1         # cancel racing the consumer on real SQL Server: one winner, stock matches
    ```
 
    Or by hand: register and log in at `/api/auth/register` and `/api/auth/login`, create a category and a
    product as the admin, then `POST /api/orders` with `{ "variantId": 1, "quantity": 1 }` and a Bearer token.
    It answers `202 Accepted` with the order in `Pending`; poll `GET /api/orders/{id}` until it is `Confirmed`
    (status `1`) or `Rejected` (`2`).
+
+   While an order is still `Pending`, its owner can cancel it with `POST /api/orders/{id}/cancel`: `200` with the
+   order in `Cancelled` (status `3`), `404` if it does not exist or belongs to someone else, `409` if it is no
+   longer `Pending`. A cancellation and the consumer can reach the same order at the same moment; `Order.Status`
+   is an EF Core concurrency token, so exactly one wins and a cancelled order never has its stock decremented.
 3. Within about a minute, open Grafana and sign in:
    - **Metrics and dashboard:** Dashboards, folder Shop, **Shop overview**. It shows request rate, 5xx rate and
-     p95 latency per endpoint, confirmed versus rejected orders, p95 order processing time and the number of
+     p95 latency per endpoint, confirmed versus rejected versus cancelled orders, p95 order processing time and the number of
      orders currently Pending.
    - **Trace:** Explore, choose the **Tempo** data source, query type TraceQL, run
      `{ resource.service.name = "inventory-api" && name = "POST api/Orders" }` and open a result. One trace
@@ -221,7 +277,7 @@ provisioned from files in `observability/grafana/`, so nothing has to be configu
 | Signal | What |
 |---|---|
 | Traces | Every HTTP request (health checks excluded), EF Core queries (SQL text, never parameter values), the publish of the `OrderPlaced` message, the consumer's processing and its `order.stock-check` span (attributes `order.id`, `variant.sku`, `order.outcome`) |
-| Metrics | HTTP request count, duration and errors per route; .NET runtime (memory, GC, thread pool); `orders.placed`, `orders.processed` (tags `outcome`, `reason`), `orders.processing.duration` (ms, Pending to final status), `orders.pending` |
+| Metrics | HTTP request count, duration and errors per route; .NET runtime (memory, GC, thread pool); `orders.placed`, `orders.processed` (tags `outcome` = `confirmed`, `rejected` or `cancelled`, and `reason`), `orders.processing.duration` (ms, Pending to final status), `orders.pending` |
 | Logs | Everything written through `ILogger` (message templates), each with the trace id and span id of the work it was written in |
 | Resource attributes | `service.name` (`inventory-api` or `order-consumer`), `service.version` (the commit SHA from the build), `deployment.environment` on every signal |
 
@@ -257,6 +313,14 @@ place an order and wait 2 minutes: `docker compose stop consumer`.
   the publish span and the consumer spans share one trace id and the consumer span is a child of the publish
   span; health checks are not traced; sampling ratio 0 exports nothing; one confirmed and one rejected order
   record exactly one `confirmed` and one `rejected` (reason `insufficient_stock`) measurement.
+- Cancellation (`OrdersControllerTests`, `OrderConcurrencyTests`, `OrderTelemetryTests`): a `Pending` order
+  cancels with `200`; a `Confirmed` order gives `409` and another user's order `404`; a consumer started after the
+  cancel keeps the order `Cancelled`, leaves the stock alone and completes the message; a cancel racing the
+  consumer has exactly one winner and stock only drops for `Confirmed` orders; two `DbContext`s resolving the same
+  order give a concurrency conflict; a cancel records `outcome="cancelled"` and leaves the Pending count.
+- `scripts/e2e-cancel-race.ps1`: the same race against the real SQL Server stack. It buys a backlog with the
+  consumer stopped, starts the consumer while cancelling newest first, and checks every order ended `Cancelled`
+  or `Confirmed` to match its cancel response. It restarts the consumer even if a check fails.
 - `scripts/e2e-collector-down.ps1`: the shop works with the Collector stopped.
 - `scripts/load-test.ps1`: the Stage 3 scenario against the compose stack.
 
